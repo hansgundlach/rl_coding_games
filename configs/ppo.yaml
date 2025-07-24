@@ -1,0 +1,41 @@
+# PPO Training Configuration for Connect-X Qwen Agent
+
+model:
+  name: "Qwen/Qwen2.5-3B"
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.1
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+training:
+  learning_rate: 1.0e-5
+  batch_size: 32
+  num_epochs: 10  # Reduced for testing
+  episodes_per_epoch: 20  # Reduced for testing
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  ppo_epochs: 4
+
+environment:
+  name: "connectx"
+  rows: 6
+  columns: 7
+  reward_shaping: true
+  
+logging:
+  project: "connectx-qwen-rl"
+  entity: null
+  log_interval: 1
+  save_interval: 5
+  
+checkpoints:
+  save_dir: "checkpoints"
+  save_best: true
