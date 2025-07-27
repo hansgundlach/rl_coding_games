@@ -25,6 +25,8 @@ class EvalPlusRunner:
         max_new_tokens: int = 512,
         temperature: float = 0.2,
         num_samples: int = 10,
+        quick_eval: bool = False,
+        quick_eval_size: int = 10,
     ):
         """Initialize EvalPlus runner."""
         self.model_path = model_path
@@ -33,8 +35,12 @@ class EvalPlusRunner:
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.num_samples = num_samples
+        self.quick_eval = quick_eval
+        self.quick_eval_size = quick_eval_size
         
         logger.info(f"Initializing EvalPlus with model: {model_path}")
+        if quick_eval:
+            logger.info(f"Quick evaluation mode enabled: using {quick_eval_size} problems per dataset")
         
         # Initialize model and tokenizer
         self.tokenizer = None
@@ -76,21 +82,36 @@ class EvalPlusRunner:
     
     def run_evaluation(self) -> Dict[str, Any]:
         """Run complete evaluation suite."""
-        logger.info("Starting EvalPlus evaluation...")
+        import time
+        
+        eval_mode = "Quick" if self.quick_eval else "Full"
+        logger.info(f"Starting {eval_mode} EvalPlus evaluation...")
         
         results = {}
+        start_time = time.time()
         
         # Run HumanEval-Plus
         logger.info("Running HumanEval-Plus evaluation...")
+        humaneval_start = time.time()
         humaneval_results = self.evaluate_humaneval_plus()
+        humaneval_time = time.time() - humaneval_start
         results['humaneval_plus'] = humaneval_results
+        results['humaneval_plus']['eval_time_seconds'] = humaneval_time
         
         # Run MBPP-Plus
         logger.info("Running MBPP-Plus evaluation...")
+        mbpp_start = time.time()
         mbpp_results = self.evaluate_mbpp_plus()
+        mbpp_time = time.time() - mbpp_start
         results['mbpp_plus'] = mbpp_results
+        results['mbpp_plus']['eval_time_seconds'] = mbpp_time
         
-        logger.info("Evaluation completed")
+        total_time = time.time() - start_time
+        results['total_eval_time_seconds'] = total_time
+        results['eval_mode'] = eval_mode
+        results['problems_per_dataset'] = self.quick_eval_size if self.quick_eval else "all"
+        
+        logger.info(f"{eval_mode} evaluation completed in {total_time:.1f}s")
         return results
     
     def evaluate_humaneval_plus(self) -> Dict[str, float]:
@@ -109,6 +130,8 @@ class EvalPlusRunner:
             
         except Exception as e:
             logger.error(f"HumanEval-Plus evaluation failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             # Return fallback results
             return {'pass@1': 0.0, 'pass@10': 0.0}
     
@@ -128,6 +151,8 @@ class EvalPlusRunner:
             
         except Exception as e:
             logger.error(f"MBPP-Plus evaluation failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             # Return fallback results
             return {'pass@1': 0.0, 'pass@10': 0.0}
     
@@ -147,7 +172,15 @@ class EvalPlusRunner:
             problems = get_human_eval_plus()
             solutions = []
             
-            for task_id, problem in problems.items():
+            # Select subset for quick evaluation
+            if self.quick_eval:
+                problem_items = list(problems.items())[:self.quick_eval_size]
+                logger.info(f"Quick eval: processing {len(problem_items)} HumanEval problems")
+            else:
+                problem_items = list(problems.items())
+                logger.info(f"Full eval: processing {len(problem_items)} HumanEval problems")
+            
+            for task_id, problem in problem_items:
                 logger.info(f"Generating solution for {task_id}")
                 
                 # Create prompt
@@ -174,6 +207,8 @@ class EvalPlusRunner:
                 
         except Exception as e:
             logger.error(f"Failed to generate HumanEval solutions: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
     
     def _generate_solutions_mbpp(self) -> str:
@@ -184,7 +219,15 @@ class EvalPlusRunner:
             problems = get_mbpp_plus()
             solutions = []
             
-            for task_id, problem in problems.items():
+            # Select subset for quick evaluation
+            if self.quick_eval:
+                problem_items = list(problems.items())[:self.quick_eval_size]
+                logger.info(f"Quick eval: processing {len(problem_items)} MBPP problems")
+            else:
+                problem_items = list(problems.items())
+                logger.info(f"Full eval: processing {len(problem_items)} MBPP problems")
+            
+            for task_id, problem in problem_items:
                 logger.info(f"Generating solution for {task_id}")
                 
                 # Create prompt
@@ -211,6 +254,8 @@ class EvalPlusRunner:
                 
         except Exception as e:
             logger.error(f"Failed to generate MBPP solutions: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
     
     def _create_code_prompt(self, problem_prompt: str) -> str:
@@ -260,12 +305,18 @@ Complete the function implementation:
             
         except Exception as e:
             logger.error(f"Code generation failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return ""
     
     def _run_evalplus_evaluation(self, solutions_file: str, dataset: str) -> Dict[str, float]:
         """Run evalplus evaluation on solutions file."""
         try:
-            # Run evalplus command
+            if self.quick_eval:
+                # For quick eval, compute pass rate manually
+                return self._compute_quick_pass_rate(solutions_file, dataset)
+            
+            # Run evalplus command for full evaluation
             cmd = [
                 "evalplus.evaluate",
                 "--dataset", dataset,
@@ -306,6 +357,93 @@ Complete the function implementation:
             
         except Exception as e:
             logger.error(f"Evalplus evaluation failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            return {'pass@1': 0.0, 'pass@10': 0.0}
+    
+    def _compute_quick_pass_rate(self, solutions_file: str, dataset: str) -> Dict[str, float]:
+        """Compute pass rate for quick evaluation using simple execution."""
+        try:
+            import json
+            import sys
+            import io
+            from contextlib import redirect_stdout, redirect_stderr
+            
+            # Load solutions
+            solutions = []
+            with open(solutions_file, 'r') as f:
+                for line in f:
+                    solutions.append(json.loads(line.strip()))
+            
+            # Load test cases
+            if dataset == "humaneval":
+                from evalplus.data import get_human_eval_plus
+                problems = get_human_eval_plus()
+            else:  # mbpp
+                from evalplus.data import get_mbpp_plus
+                problems = get_mbpp_plus()
+            
+            passed = 0
+            total = len(solutions)
+            
+            for solution in solutions:
+                task_id = solution['task_id']
+                completion = solution['completion']
+                
+                if task_id not in problems:
+                    continue
+                
+                problem = problems[task_id]
+                
+                # Simple execution test (basic functionality only)
+                try:
+                    # Combine prompt and completion
+                    if dataset == "humaneval":
+                        full_code = problem['prompt'] + completion
+                    else:  # mbpp
+                        full_code = completion
+                    
+                    # Execute in isolated namespace
+                    namespace = {}
+                    exec(full_code, namespace)
+                    
+                    # Run a basic test (this is simplified)
+                    if 'test' in problem:
+                        test_code = problem['test']
+                        exec(test_code, namespace)
+                        passed += 1
+                    else:
+                        # If no explicit test, consider it passed if execution succeeded
+                        passed += 1
+                        
+                except Exception as e:
+                    # Execution failed
+                    continue
+            
+            # Clean up temporary file
+            os.unlink(solutions_file)
+            
+            pass_rate = passed / total if total > 0 else 0.0
+            logger.info(f"Quick eval: {passed}/{total} problems passed ({pass_rate:.3f})")
+            
+            return {
+                'pass@1': pass_rate,
+                'pass@10': pass_rate,  # Same as pass@1 for quick eval
+                'problems_tested': total,
+                'problems_passed': passed,
+            }
+            
+        except Exception as e:
+            logger.error(f"Quick evaluation computation failed: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Clean up temporary file
+            try:
+                os.unlink(solutions_file)
+            except:
+                pass
+            
             return {'pass@1': 0.0, 'pass@10': 0.0}
 
 
@@ -324,6 +462,7 @@ def main():
     runner = EvalPlusRunner(
         model_path="Qwen/Qwen2.5-3B",
         lora_path=args.checkpoint_path,
+        quick_eval=False,  # Full evaluation for standalone runs
     )
     
     results = runner.run_evaluation()

@@ -1,4 +1,4 @@
-# Qwen PPO Training Configuration
+# Qwen PPO Training Configuration - Ultra-Fast Demo (< 10 minutes)
 
 # Environment settings
 environment:
@@ -36,31 +36,31 @@ ppo:
   value_loss_coef: 0.5
   entropy_coef: 0.01
 
-# Training settings
+# Training settings - Ultra-fast demo
 training:
-  num_epochs: 2  # Reduced for testing
-  episodes_per_epoch: 5  # Reduced for testing
-  batch_size: 2  # Reduced for testing
+  num_epochs: 3            # Very few epochs for demo
+  episodes_per_epoch: 2    # Minimal episodes
+  batch_size: 1            # Smallest batch for speed
   learning_rate: 5e-5
   weight_decay: 0.01
   max_grad_norm: 1.0
 
 # Checkpointing
 checkpoints:
-  save_dir: "checkpoints/qwen_ppo"
-  save_interval: 1  # Save every epoch for testing
+  save_dir: "checkpoints/qwen_ppo_demo"
+  save_interval: 1         # Save every epoch to see evaluations
 
 # Logging
 logging:
-  project: "connectx-qwen-rl"
+  project: "connectx-qwen-rl-demo"
   entity: null  # Set your W&B entity if needed
   log_interval: 1
 
-# Evaluation
+# Evaluation - Ultra-fast settings
 evaluation:
-  skip_initial_eval: true  # Skip initial evaluation for faster startup
-  coding_eval_interval: 5  # Evaluate coding performance every N epochs
-  num_coding_samples: 1    # Number of samples for coding evaluation
-  quick_eval: true         # Use quick evaluation (small subset) for faster training
-  quick_eval_size: 10      # Number of problems per dataset for quick eval
-  full_eval_interval: 20   # Run full evaluation every N epochs (0 = never)
+  skip_initial_eval: false    # Show initial baseline
+  coding_eval_interval: 1     # Evaluate every single epoch!
+  num_coding_samples: 1       # Single sample
+  quick_eval: true           # Use quick evaluation
+  quick_eval_size: 5         # Very small for speed (5 problems each)
+  full_eval_interval: 0      # No full evaluation for demo

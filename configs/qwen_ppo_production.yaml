@@ -1,0 +1,66 @@
+# Qwen PPO Training Configuration - Production Settings
+
+# Environment settings
+environment:
+  rows: 6
+  columns: 7
+  reward_shaping: true
+
+# Qwen model settings
+qwen:
+  model_name: "Qwen/Qwen2.5-3B"
+  device: "auto"  # "cuda", "cpu", or "auto"
+  max_new_tokens: 10
+  temperature: 0.7
+
+# LoRA configuration
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+
+# PPO hyperparameters
+ppo:
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+
+# Training settings - Production scale
+training:
+  num_epochs: 100          # Full training run
+  episodes_per_epoch: 20   # More episodes for better learning
+  batch_size: 8            # Larger batches for stability
+  learning_rate: 1e-5      # Lower learning rate for production
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+# Checkpointing
+checkpoints:
+  save_dir: "checkpoints/qwen_ppo_production"
+  save_interval: 10        # Save every 10 epochs
+
+# Logging
+logging:
+  project: "connectx-qwen-rl-production"
+  entity: null  # Set your W&B entity if needed
+  log_interval: 1
+
+# Evaluation - Quick eval by default, full eval periodically
+evaluation:
+  skip_initial_eval: false    # Run initial eval to establish baseline
+  coding_eval_interval: 10    # Evaluate every 10 epochs
+  num_coding_samples: 1       # Single sample for faster eval
+  quick_eval: true           # Use quick evaluation by default
+  quick_eval_size: 20        # More problems for better quick estimates
+  full_eval_interval: 50     # Run full evaluation every 50 epochs

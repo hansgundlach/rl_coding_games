@@ -255,10 +255,15 @@ class QwenConnectXPPOTrainer:
             'num_batches': num_batches,
         }
     
-    def evaluate_coding_performance(self, checkpoint_path: str = None) -> Dict[str, Any]:
+    def evaluate_coding_performance(self, checkpoint_path: str = None, force_full_eval: bool = False) -> Dict[str, Any]:
         """Evaluate model on coding benchmarks."""
         try:
-            print("Running coding benchmark evaluation...")
+            eval_config = self.config.get('evaluation', {})
+            
+            # Determine evaluation mode
+            use_quick_eval = eval_config.get('quick_eval', True) and not force_full_eval
+            eval_mode = "Quick" if use_quick_eval else "Full"
+            print(f"Running {eval_mode.lower()} coding benchmark evaluation...")
             
             # Use current model or specified checkpoint
             model_path = checkpoint_path or self.config['qwen']['model_name']
@@ -269,11 +274,13 @@ class QwenConnectXPPOTrainer:
                 device=self.config['qwen'].get('device', 'auto'),
                 max_new_tokens=512,
                 temperature=0.2,
-                num_samples=1,  # Reduced for faster evaluation
+                num_samples=eval_config.get('num_coding_samples', 1),
+                quick_eval=use_quick_eval,
+                quick_eval_size=eval_config.get('quick_eval_size', 10),
             )
             
             results = runner.run_evaluation()
-            print(f"Coding evaluation results: {results}")
+            print(f"Coding evaluation results ({eval_mode}): {results}")
             
             return results
             
@@ -281,7 +288,9 @@ class QwenConnectXPPOTrainer:
             print(f"Coding evaluation failed: {e}")
             return {
                 'humaneval_plus': {'pass@1': 0.0, 'pass@10': 0.0},
-                'mbpp_plus': {'pass@1': 0.0, 'pass@10': 0.0}
+                'mbpp_plus': {'pass@1': 0.0, 'pass@10': 0.0},
+                'eval_mode': 'Failed',
+                'total_eval_time_seconds': 0,
             }
     
     def train(self):
@@ -347,8 +356,18 @@ class QwenConnectXPPOTrainer:
                 save_lora_checkpoint(self.model, checkpoint_path)
                 print(f"  Saved LoRA checkpoint: {checkpoint_path}")
                 
-                # Run coding evaluation
-                coding_results = self.evaluate_coding_performance(checkpoint_path)
+                # Determine evaluation type
+                eval_config = self.config.get('evaluation', {})
+                full_eval_interval = eval_config.get('full_eval_interval', 0)
+                
+                # Run full evaluation if specified interval is reached
+                if full_eval_interval > 0 and (epoch + 1) % full_eval_interval == 0:
+                    print(f"  Running full evaluation at epoch {epoch + 1}")
+                    coding_results = self.evaluate_coding_performance(checkpoint_path, force_full_eval=True)
+                else:
+                    # Run quick evaluation by default
+                    coding_results = self.evaluate_coding_performance(checkpoint_path, force_full_eval=False)
+                
                 self.logger.log_coding_evaluation(coding_results, epoch + 1)
         
         print("Training completed!")

@@ -1,8 +1,12 @@
 """Kaggle Connect-X environment wrapper for RL training."""
 
 import numpy as np
-import gym
-from gym import spaces
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+except ImportError:
+    import gym
+    from gym import spaces
 from kaggle_environments import make
 from typing import Dict, Any, Tuple, Optional
 
