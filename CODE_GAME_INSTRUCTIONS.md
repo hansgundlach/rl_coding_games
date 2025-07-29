@@ -10,7 +10,68 @@ This implements a code generation game where a Qwen model learns to write Python
 - Python 3.10+
 - Virtual environment activated
 
-### 2. Environment Setup
+### 2. Platform-Specific Setup
+
+#### MIT Supercloud (V100, No Internet) - RECOMMENDED SETUP
+
+**Step 1: Request Interactive Session**
+```bash
+# Request GPU node with adequate resources for training
+LLsub -i -s 4 -g volta:1 -R "rusage[mem=64000]" -W 4:00
+
+# Wait for node assignment, then SSH to the assigned node
+ssh your-assigned-node-name
+```
+
+**Step 2: Set Up Environment**
+```bash
+# Navigate to your project directory
+cd /home/gridsan/yourusername/game_project_rl
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Verify Qwen2.5-1.5B model is cached (should be available now)
+ls -la model_cache/models--Qwen--Qwen2.5-1.5B/
+
+# Check GPU allocation
+nvidia-smi
+```
+
+**Step 3: Run Training**
+```bash
+# Just run - auto-detects Supercloud and uses cached models!
+python grpo_code_game.py
+```
+
+**Expected Supercloud Output:**
+```
+🔍 Auto-detected: Supercloud platform
+🎮 GPU: V100, BF16 support: False
+🌐 Offline mode: True (detected Supercloud environment)
+🎯 Using preferred cached model: Qwen/Qwen2.5-1.5B (better memory efficiency)
+Loading trainable model: Qwen/Qwen2.5-1.5B
+🔧 Using V100 + 1.5B model settings (moderate memory reduction)
+🚫 Skipping W&B login (offline mode)
+Starting GRPO training...
+```
+
+**Supercloud Resource Requirements:**
+- **GPU**: 1x Tesla V100 (32GB VRAM)
+- **CPU**: 4 cores recommended
+- **Memory**: 64GB RAM recommended
+- **Time**: 4+ hours for full training
+
+**Memory Settings (V100 + Qwen2.5-1.5B):**
+- `batch_size=4` (moderate memory usage)
+- `gradient_accumulation_steps=2`
+- `max_prompt_length=256`
+- `max_completion_length=128`
+- `gradient_checkpointing=True` (memory optimization)
+- `fp16=True` (V100 compatible precision)
+
+#### Lambda Labs (A100, Internet Access)
+
 ```bash
 # Navigate to project directory
 cd /lambda/nfs/Gundlach2025/game_project_rl
@@ -18,13 +79,32 @@ cd /lambda/nfs/Gundlach2025/game_project_rl
 # Activate virtual environment
 source venv/bin/activate
 
-# Setup environment variables (REQUIRED)
-# Edit .env file and add your API keys:
-# WANDB_API_KEY=your_wandb_key_here
-
-# Verify packages are installed
-python -c "import torch, transformers, trl, peft, wandb, dotenv; print('All packages available')"
+# Run training - auto-detects Lambda environment
+python grpo_code_game.py
 ```
+
+**Expected Lambda Output:**
+```
+🔍 Auto-detected: Lambda platform
+🎮 GPU: A100, BF16 support: True
+🌐 Offline mode: False (internet connection available)
+✓ Logged into W&B using environment variable
+Loading trainable model: Qwen/Qwen2.5-1.5B
+🔧 Using standard memory settings for A100/other GPUs
+Starting GRPO training...
+```
+
+#### Automatic Platform Detection
+
+The system **automatically detects** your platform and configures itself:
+
+- **🔍 Platform Detection**: Detects Supercloud vs Lambda based on hostname/path
+- **🎮 GPU Detection**: Auto-detects V100, A100, H100 and configures BF16 accordingly  
+- **🌐 Network Detection**: Tests internet connectivity and enables offline mode as needed
+- **🎯 Model Selection**: Prefers Qwen2.5-1.5B over 3B for better memory efficiency
+- **⚙️ Memory Optimization**: Adjusts batch size and settings based on GPU + model combination
+
+**No environment variables needed - just run `python grpo_code_game.py`!**
 
 ### 2.1. Configure API Keys
 Create or edit the `.env` file in the project root:
