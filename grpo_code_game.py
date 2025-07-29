@@ -16,19 +16,89 @@ import wandb
 import sys
 import os
 import datetime
+import glob
+
+def detect_platform_and_gpu():
+    """Auto-detect platform and GPU capabilities for environment-specific settings."""
+    if not torch.cuda.is_available():
+        return {"supports_bf16": False, "device": "cpu", "gpu_type": "none", "offline_mode": False, "platform": "cpu"}
+    
+    # Get GPU name for detection
+    gpu_name = torch.cuda.get_device_name(0).upper()
+    hostname = os.uname().nodename.lower()
+    current_path = os.getcwd().lower()
+    
+    # Platform detection logic
+    is_supercloud = 'gridsan' in hostname or 'supercloud' in hostname or '/home/gridsan/' in current_path
+    is_lambda = 'lambda' in hostname or '/lambda/' in current_path
+    
+    # GPU type detection
+    if 'V100' in gpu_name:
+        gpu_type = "V100"
+        supports_bf16 = False
+    elif 'A100' in gpu_name or 'H100' in gpu_name:
+        gpu_type = "A100+" if 'A100' in gpu_name else "H100"
+        supports_bf16 = True
+    else:
+        gpu_type = "unknown"
+        supports_bf16 = False
+    
+    # Offline mode detection
+    if is_supercloud:
+        offline_mode = True
+        offline_reason = "detected Supercloud environment"
+    else:
+        try:
+            import socket
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            offline_mode = False
+            offline_reason = "internet connection available"
+        except (socket.error, socket.timeout):
+            offline_mode = True
+            offline_reason = "no internet connection detected"
+    
+    platform = "Supercloud" if is_supercloud else ("Lambda" if is_lambda else "unknown")
+    
+    return {
+        "supports_bf16": supports_bf16,
+        "device": "cuda",
+        "gpu_type": gpu_type,
+        "offline_mode": offline_mode,
+        "platform": platform,
+        "offline_reason": offline_reason
+    }
+
+# Auto-detect platform and capabilities
+platform_info = detect_platform_and_gpu()
+print(f"🔍 Auto-detected: {platform_info['platform']} platform")
+print(f"🎮 GPU: {platform_info['gpu_type']}, BF16 support: {platform_info['supports_bf16']}")
+print(f"🌐 Offline mode: {platform_info['offline_mode']} ({platform_info['offline_reason']})")
+
+# Extract values for easier use
+offline_mode = platform_info['offline_mode']
+
+# Set global environment variables for transformers library
+if offline_mode:
+    os.environ['TRANSFORMERS_OFFLINE'] = '1'
+    os.environ['HF_DATASETS_OFFLINE'] = '1'
+    os.environ['WANDB_MODE'] = 'disabled'
+    print("✅ Set global offline mode for transformers and wandb")
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.env_loader import get_api_key
 
-# Initialize wandb with API key from environment
-wandb_key = get_api_key('wandb', required=False)
-if wandb_key:
-    wandb.login(key=wandb_key)
-    print("✓ Logged into W&B using environment variable")
+# Initialize wandb with API key from environment (skip if offline)
+if not offline_mode:
+    wandb_key = get_api_key('wandb', required=False)
+    if wandb_key:
+        wandb.login(key=wandb_key)
+        print("✓ Logged into W&B using environment variable")
+    else:
+        print("⚠️ No W&B API key found, continuing without logging")
 else:
-    print("⚠️ No W&B API key found, continuing without logging")
+    print("🚫 Skipping W&B login (offline mode)")
 
 def run_and_capture(code: str) -> str:
     """Executes code and captures its stdout output."""
@@ -76,16 +146,56 @@ dataset = Dataset.from_dict({
 
 print(f"Created dataset: {dataset}")
 
-# Load the main model (trainable)
-model_id = "Qwen/Qwen2.5-1.5B"
+# Set up model cache directory
+cache_dir = "./model_cache"
+os.makedirs(cache_dir, exist_ok=True)
+
+# Load the main model (trainable) - prefer 1.5B for better memory efficiency
+if offline_mode:
+    # Check what models are available in cache, prefer 1.5B over 3B for memory efficiency
+    cached_models = glob.glob(os.path.join(cache_dir, "models--Qwen--Qwen2.5-*"))
+    
+    # Prefer 1.5B model if available (better memory efficiency)
+    preferred_model = None
+    fallback_model = None
+    
+    for cached_model_path in cached_models:
+        model_name = os.path.basename(cached_model_path).replace("models--", "").replace("--", "/")
+        if "1.5B" in model_name:
+            preferred_model = model_name
+            break
+        elif "3B" in model_name:
+            fallback_model = model_name
+    
+    if preferred_model:
+        model_id = preferred_model
+        print(f"🎯 Using preferred cached model: {model_id} (better memory efficiency)")
+    elif fallback_model:
+        model_id = fallback_model
+        print(f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)")
+    else:
+        model_id = "Qwen/Qwen2.5-1.5B"  # fallback
+        print(f"⚠️  No cached models found, attempting: {model_id}")
+else:
+    model_id = "Qwen/Qwen2.5-1.5B"  # Prefer smaller model for better performance
+
 print(f"Loading trainable model: {model_id}")
 
 model1 = AutoModelForCausalLM.from_pretrained(
     model_id,
     torch_dtype="auto",
     device_map="auto",
+    cache_dir=cache_dir,
+    local_files_only=offline_mode
 )
-tokenizer1 = AutoTokenizer.from_pretrained(model_id)
+tokenizer1 = AutoTokenizer.from_pretrained(
+    model_id,
+    cache_dir=cache_dir,
+    local_files_only=offline_mode
+)
+# Ensure tokenizer has pad token
+if tokenizer1.pad_token is None:
+    tokenizer1.pad_token = tokenizer1.eos_token
 
 # Load LoRA
 lora_config = LoraConfig(
@@ -97,12 +207,25 @@ lora_config = LoraConfig(
 model1 = get_peft_model(model1, lora_config)
 print(model1.print_trainable_parameters())
 
-# Load static opponent model
-model_name2 = "Qwen/Qwen2.5-1.5B"
+# Load static opponent model - use same cached model as trainable model
+model_name2 = model_id  # Use same model as the trainable model
 print(f"Loading static opponent: {model_name2}")
 
-tokenizer2 = AutoTokenizer.from_pretrained(model_name2)
-model2 = AutoModelForCausalLM.from_pretrained(model_name2, torch_dtype="auto")
+tokenizer2 = AutoTokenizer.from_pretrained(
+    model_name2,
+    cache_dir=cache_dir,
+    local_files_only=offline_mode
+)
+# Ensure tokenizer has pad token
+if tokenizer2.pad_token is None:
+    tokenizer2.pad_token = tokenizer2.eos_token
+
+model2 = AutoModelForCausalLM.from_pretrained(
+    model_name2,
+    torch_dtype="auto",
+    cache_dir=cache_dir,
+    local_files_only=offline_mode
+)
 
 # Move to GPU if available
 model2 = model2.to("cuda" if torch.cuda.is_available() else "cpu")
@@ -208,23 +331,59 @@ def reward_function(completions, **kwargs):
     
     return rewards
 
-# Training arguments
+# Training arguments - adjust for GPU memory capacity and model size
 print("Setting up GRPO training...")
+
+# Adaptive settings based on GPU type and model size
+if platform_info['gpu_type'] == 'V100':
+    if '3B' in model_id:
+        # V100 with 3B model - very aggressive memory reduction
+        batch_size = 1
+        gradient_accumulation_steps = 8
+        max_prompt_length = 128
+        max_completion_length = 64
+        print("🔧 Using V100 + 3B model settings (very aggressive memory reduction)")
+    else:
+        # V100 with 1.5B model - moderate memory reduction
+        batch_size = 4
+        gradient_accumulation_steps = 2
+        max_prompt_length = 256
+        max_completion_length = 128
+        print("🔧 Using V100 + 1.5B model settings (moderate memory reduction)")
+else:
+    # A100 or other GPUs - standard settings
+    batch_size = 8
+    gradient_accumulation_steps = 2
+    max_prompt_length = 512
+    max_completion_length = 200
+    print("🔧 Using standard memory settings for A100/other GPUs")
+
 training_args = GRPOConfig(
     output_dir="checkpoints/grpo_code",
     learning_rate=2e-5,
-    per_device_train_batch_size=8,
-    gradient_accumulation_steps=2,
-    max_prompt_length=512,
-    max_completion_length=200,
-    num_generations=2,
+    per_device_train_batch_size=batch_size,
+    gradient_accumulation_steps=gradient_accumulation_steps,
+    max_prompt_length=max_prompt_length,
+    max_completion_length=max_completion_length,
+    num_generations=2,  # GRPO requires minimum 2
     optim="adamw_8bit",
     num_train_epochs=1,
-    bf16=False,  # Disabled for compatibility
-    report_to=["wandb"],
+    bf16=platform_info['supports_bf16'],  # Auto-configured based on GPU type
+    fp16=not platform_info['supports_bf16'],  # Use fp16 if bf16 not supported
+    gradient_checkpointing=True if platform_info['gpu_type'] == 'V100' else False,  # Memory optimization for V100
+    dataloader_pin_memory=False if platform_info['gpu_type'] == 'V100' else True,  # Memory optimization for V100
+    report_to=["wandb"] if not offline_mode else [],
     remove_unused_columns=False,
     logging_steps=1,
 )
+
+# Fix model config path for GRPOTrainer if in offline mode
+if offline_mode:
+    # Point the model config to actual cached snapshot directory so GRPOTrainer can find tokenizer files locally
+    cached_model_dirs = glob.glob(os.path.join(cache_dir, f"models--{model_id.replace('/', '--')}", "snapshots", "*"))
+    if cached_model_dirs:
+        model1.config._name_or_path = cached_model_dirs[0]
+        print(f"🔧 Set model config path to: {cached_model_dirs[0]}")
 
 # Create trainer
 trainer = GRPOTrainer(
@@ -236,12 +395,18 @@ trainer = GRPOTrainer(
 
 print("Starting GRPO training...")
 
-# Initialize wandb run
-timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-wandb.init(project=f"qwen-code-game-grpo-{timestamp}")
+# Initialize wandb run (only if not in offline mode)
+if not offline_mode:
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    wandb.init(project=f"qwen-code-game-grpo-{timestamp}")
+else:
+    print("🚫 Skipping wandb initialization (offline mode)")
 
 # Train model
 trainer.train()
 
 print("Training completed!")
-wandb.finish()
+if not offline_mode:
+    wandb.finish()
+else:
+    print("✅ Training completed (offline mode - no wandb to finish)")
