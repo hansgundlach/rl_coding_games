@@ -175,6 +175,10 @@ def main():
     """Run all tests."""
     print("=== Qwen ConnectX RL Pipeline Test ===\n")
     
+    # Load environment variables
+    from utils.env_loader import load_environment, get_api_key
+    load_environment()
+    
     # Change to project directory
     project_dir = Path(__file__).parent
     os.chdir(project_dir)

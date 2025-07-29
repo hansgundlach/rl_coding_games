@@ -18,6 +18,8 @@ from environment.connectx_wrapper import ConnectXWrapper
 from environment.reward_shaping import RewardShaper
 from agents.qwen_policy import QwenPolicyAgent
 from evaluation.evalplus_runner import EvalPlusRunner
+from utils.env_loader import get_api_key
+import wandb
 
 
 class QwenPPOExperience:
@@ -50,6 +52,10 @@ class QwenConnectXPPOTrainer:
     
     def setup_logging(self):
         """Initialize Weights & Biases logging."""
+        wandb_key = get_api_key('wandb', required=False)
+        if wandb_key:
+            wandb.login(key=wandb_key)
+
         self.logger = WandBLogger(
             project=self.config['logging']['project'],
             entity=self.config['logging'].get('entity'),

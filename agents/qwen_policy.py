@@ -12,6 +12,8 @@ try:
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
+from utils.env_loader import get_api_key
+
 
 class QwenPolicyAgent(BaseAgent):
     """Connect-X agent using Qwen-3-4B with LoRA fine-tuning."""
@@ -36,6 +38,10 @@ class QwenPolicyAgent(BaseAgent):
         self.model = None
         self.lora_checkpoint = lora_checkpoint
         self._initialized = False
+        
+        # Get API key if using hosted models
+        if "api" in model_name.lower():
+            self.api_key = get_api_key('anthropic')  # or 'openai'
         
         # Initialize model and tokenizer
         self._lazy_init()
