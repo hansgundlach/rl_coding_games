@@ -69,3 +69,60 @@ rewards:
   syntax_error: -0.5          # Code has syntax/indentation errors
   runtime_error: -1.0         # Code has runtime errors
   timeout_error: -1.0         # Code execution times out
+
+# --- vLLM Integration Settings ---
+vllm:
+  # Enable vLLM for faster inference (offline-compatible for Supercloud V100s)
+  enabled: True               # Set to False to use standard HuggingFace generation
+  
+  # Server Configuration (V100-optimized for Supercloud)
+  server:
+    host: "localhost"
+    port: 8000
+    gpu_memory_utilization: 0.85    # Conservative for V100s (16GB VRAM)
+    max_model_len: 2048             # Balanced for V100 memory constraints
+    tensor_parallel_size: 1         # Single GPU, increase if multiple V100s available
+    max_num_batched_tokens: 4096    # Optimized batch size for V100
+    max_num_seqs: 32               # Concurrent sequences
+    swap_space: 4                  # GB of CPU swap space
+    dtype: "float16"               # Use fp16 for V100 compatibility
+    trust_remote_code: True
+    
+    # Offline mode settings for Supercloud
+    offline_mode: True             # Enable offline mode
+    disable_log_requests: True     # Reduce logging overhead
+    disable_log_stats: False       # Keep performance stats
+    
+  # Client Configuration
+  client:
+    base_url: "http://localhost:8000/v1"
+    timeout: 60                    # seconds
+    max_retries: 3
+    
+  # Generation Parameters for GRPO Training
+  generation:
+    grpo_completions:
+      max_tokens: 512
+      temperature: 0.8
+      top_p: 0.9
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      stop: ["```", "\n\n\n"]     # Stop at code blocks or excessive newlines
+      
+    # Generation Parameters for MBPP Evaluation  
+    mbpp_evaluation:
+      max_tokens: 512
+      temperature: 0.2
+      top_p: 0.95
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      stop: ["```", "def ", "class ", "\n\n"]
+      
+  # Integration Control
+  integration:
+    use_for_grpo_completions: True    # Use vLLM for reward function completions
+    use_for_evaluation: True          # Use vLLM for MBPP evaluation
+    auto_start_server: True           # Automatically start vLLM server
+    wait_for_server: 30              # Seconds to wait for server startup
+    fallback_to_hf: True             # Fall back to HuggingFace if vLLM fails
+    log_performance_comparison: True  # Log speed comparisons

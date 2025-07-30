@@ -16,6 +16,14 @@ from dataclasses import dataclass
 import torch
 import random
 
+# Import vLLM integration
+try:
+    from utils.vllm_client import get_vllm_integration
+    VLLM_AVAILABLE = True
+except ImportError:
+    VLLM_AVAILABLE = False
+    get_vllm_integration = lambda: None
+
 logger = logging.getLogger(__name__)
 
 
@@ -250,40 +258,16 @@ class MBPPEvaluator:
         
         return result
     
-    def evaluate_single_problem(self, problem: Dict, model, tokenizer) -> Dict[str, Any]:
-        """Evaluate model on a single MBPP problem."""
+    def evaluate_single_problem(self, problem: Dict, model, tokenizer, use_vllm: bool = False) -> Dict[str, Any]:
+        """Evaluate model on a single MBPP problem with optional vLLM acceleration."""
         prompt = self.create_prompt(problem)
         
         try:
-            # Tokenize
-            inputs = tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=1024,
-                padding=True
-            )
-            
-            # Move to device
-            if torch.cuda.is_available():
-                inputs = {k: v.to(model.device) for k, v in inputs.items()}
-            
-            # Generate
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=self.config.max_new_tokens,
-                    temperature=self.config.temperature,
-                    do_sample=self.config.do_sample,
-                    pad_token_id=tokenizer.eos_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
-                )
-            
-            # Decode
-            generated_text = tokenizer.decode(
-                outputs[0][inputs['input_ids'].shape[1]:],
-                skip_special_tokens=True
-            ).strip()
+            # Choose generation method
+            if use_vllm and VLLM_AVAILABLE:
+                generated_text = self._generate_with_vllm(prompt)
+            else:
+                generated_text = self._generate_with_hf(prompt, model, tokenizer)
             
             # Extract code
             code = self.extract_code(generated_text)
@@ -313,15 +297,67 @@ class MBPPEvaluator:
                 'passed': False
             }
     
+    def _generate_with_vllm(self, prompt: str) -> str:
+        """Generate text using vLLM server"""
+        vllm_integration = get_vllm_integration()
+        if not vllm_integration:
+            raise RuntimeError("vLLM integration not available")
+            
+        completions = vllm_integration.generate_completions([prompt], mode="mbpp_evaluation")
+        return completions[0] if completions else ""
+    
+    def _generate_with_hf(self, prompt: str, model, tokenizer) -> str:
+        """Generate text using HuggingFace model"""
+        # Tokenize
+        inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=1024,
+            padding=True
+        )
+        
+        # Move to device
+        if torch.cuda.is_available():
+            inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        
+        # Generate
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=self.config.max_new_tokens,
+                temperature=self.config.temperature,
+                do_sample=self.config.do_sample,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        
+        # Decode
+        generated_text = tokenizer.decode(
+            outputs[0][inputs['input_ids'].shape[1]:],
+            skip_special_tokens=True
+        ).strip()
+        
+        return generated_text
+    
     def evaluate_model(self, model, tokenizer, step: int = 0, phase: str = "eval") -> Dict[str, Any]:
-        """Run full MBPP evaluation on model."""
+        """Run full MBPP evaluation on model with optional vLLM acceleration."""
         if not self.config.enabled:
             return {"enabled": False}
         
         start_time = time.time()
         problems = self.get_eval_problems()
         
-        logger.info(f"Running MBPP evaluation at step {step} ({phase}) on {len(problems)} problems")
+        # Check if vLLM should be used for evaluation
+        vllm_integration = get_vllm_integration()
+        use_vllm = (vllm_integration and 
+                   vllm_integration.vllm_config.enabled and 
+                   vllm_integration.vllm_config.integration.get('use_for_evaluation', False))
+        
+        if use_vllm:
+            logger.info(f"🚀 Running MBPP evaluation with vLLM at step {step} ({phase}) on {len(problems)} problems")
+        else:
+            logger.info(f"Running MBPP evaluation with HuggingFace at step {step} ({phase}) on {len(problems)} problems")
         
         results = []
         passed_count = 0
@@ -330,7 +366,7 @@ class MBPPEvaluator:
             if self.config.verbose:
                 logger.info(f"Evaluating problem {i+1}/{len(problems)}: task_id={problem.get('task_id', 'unknown')}")
             
-            result = self.evaluate_single_problem(problem, model, tokenizer)
+            result = self.evaluate_single_problem(problem, model, tokenizer, use_vllm=use_vllm)
             results.append(result)
             
             if result['passed']:

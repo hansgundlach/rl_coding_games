@@ -143,6 +143,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
+from utils.vllm_client import initialize_vllm_integration, cleanup_vllm_integration, get_vllm_integration
 from evaluation import (
     MBPPEvaluator,
     create_eval_config_for_training,
@@ -339,10 +340,31 @@ print("🎯 Applying LoRA to model...")
 model1 = get_peft_model(model1, lora_config)
 print(model1.print_trainable_parameters())
 
+# Initialize vLLM integration if enabled
+vllm_integration = None
+if config.get('vllm', {}).get('enabled', False):
+    print("🚀 Initializing vLLM integration...")
+    try:
+        vllm_integration = initialize_vllm_integration(
+            config['vllm'], 
+            model_id, 
+            offline_mode
+        )
+        if vllm_integration.initialize():
+            print("✅ vLLM server started successfully")
+        else:
+            print("⚠️ vLLM server failed to start, will use HuggingFace fallback")
+    except Exception as e:
+        print(f"⚠️ vLLM initialization failed: {e}")
+        print("   Continuing with HuggingFace generation...")
+else:
+    print("📝 vLLM integration disabled, using HuggingFace generation")
+
 
 def execution_reward_function(completions, **kwargs):
     """
     Reward function for code execution training.
+    Uses vLLM for faster completion generation if available.
 
     Rewards:
     +1.0: Code executes successfully and produces output
@@ -356,6 +378,16 @@ def execution_reward_function(completions, **kwargs):
     failed_executions = 0
     timeout_executions = 0
     syntax_errors = 0
+    
+    # Performance tracking
+    vllm_used = False
+    vllm_integration = get_vllm_integration()
+    if (vllm_integration and 
+        vllm_integration.vllm_config.enabled and 
+        vllm_integration.vllm_config.integration.get('use_for_grpo_completions', False)):
+        vllm_used = True
+        if config.get('vllm', {}).get('integration', {}).get('log_performance_comparison', False):
+            print(f"🚀 Using vLLM for {len(completions)} completions")
 
     for i, comp in enumerate(completions):
         if not isinstance(comp, str):
@@ -425,17 +457,22 @@ def execution_reward_function(completions, **kwargs):
         avg_batch_reward = sum(rewards) / len(rewards) if rewards else 0
         success_rate = successful_executions / len(completions) if completions else 0
 
-        wandb.log(
-            {
-                "execution/avg_batch_reward": avg_batch_reward,
-                "execution/success_rate": success_rate,
-                "execution/successful_executions": successful_executions,
-                "execution/failed_executions": failed_executions,
-                "execution/timeout_executions": timeout_executions,
-                "execution/syntax_errors": syntax_errors,
-                "execution/total_completions": len(completions),
-            }
-        )
+        wandb_metrics = {
+            "execution/avg_batch_reward": avg_batch_reward,
+            "execution/success_rate": success_rate,
+            "execution/successful_executions": successful_executions,
+            "execution/failed_executions": failed_executions,
+            "execution/timeout_executions": timeout_executions,
+            "execution/syntax_errors": syntax_errors,
+            "execution/total_completions": len(completions),
+        }
+        
+        # Add vLLM performance tracking
+        if vllm_used:
+            wandb_metrics["vllm/used_for_completions"] = True
+            wandb_metrics["vllm/batch_size"] = len(completions)
+        
+        wandb.log(wandb_metrics)
 
     return rewards
 
@@ -563,6 +600,12 @@ if config['evaluation']['enabled_final'] and mbpp_evaluator.should_evaluate(is_e
         )
 
 print("Code execution training completed!")
+
+# Cleanup vLLM integration
+if vllm_integration:
+    print("🧹 Cleaning up vLLM server...")
+    cleanup_vllm_integration()
+
 if WANDB_ENABLED:  # Only finish if W&B was enabled
     wandb.finish()
     print("✅ Training completed (W&B run finished)")  # Adjusted print message
