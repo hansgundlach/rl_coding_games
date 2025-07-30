@@ -73,11 +73,13 @@ class MBPPEvaluator:
         if not self.config.dataset_path:
             # Try to find dataset in common locations
             possible_paths = [
+                "./evaluation/datasets/sanitized-mbpp.json",
+                "./evaluation/datasets/mbpp.jsonl",
                 "./data/mbpp/sanitized-mbpp.json",
                 "./data/mbpp/mbpp.jsonl", 
                 "../data/mbpp/sanitized-mbpp.json",
                 "../data/mbpp/mbpp.jsonl",
-                "/home/gridsan/hgundlach/game_project_rl/data/mbpp/sanitized-mbpp.json"
+                "/home/gridsan/hgundlach/game_project_rl/evaluation/datasets/sanitized-mbpp.json"
             ]
             
             for path in possible_paths:

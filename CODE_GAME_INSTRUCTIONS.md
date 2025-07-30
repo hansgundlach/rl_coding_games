@@ -196,14 +196,23 @@ print(simple())
 
 ## Monitoring and Logging
 
-### Weights & Biases Dashboard
-- **Project**: `qwen-code-game-grpo`
-- **URL**: https://wandb.ai/hansgund-massachusetts-institute-of-technology/qwen-code-game-grpo
-- **Metrics tracked**:
-  - Training loss
-  - Reward progression
-  - Generated code examples
-  - Model gradients
+### Weights & Biases (W&B) for Offline Use
+
+By default, the training script runs in offline mode to prevent network issues on the Supercloud. The logs are saved locally in the `wandb/` directory.
+
+To sync your results to the W&B dashboard later, you can use the `wandb sync` command from your local machine (with internet access):
+
+```bash
+# On your local machine, after downloading the wandb directory
+wandb sync /path/to/your/project/wandb/offline-run-*
+```
+
+To disable W&B logging entirely, you can set the `WANDB_DISABLED` environment variable:
+
+```bash
+export WANDB_DISABLED=true
+python grpo_code_game.py
+```
 
 ### Local Checkpoints
 Saved to: `checkpoints/grpo_code/`

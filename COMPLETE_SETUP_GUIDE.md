@@ -71,24 +71,28 @@ export HUGGINGFACE_HUB_TOKEN="your_hf_token_here"
 2. Create a new token with "Read" permissions
 3. Copy the token for use above
 
-### 4. Weights & Biases Setup (Optional but Recommended)
+### 4. Weights & Biases Setup (Offline First)
+
+By default, this project is configured for offline W&B logging, which is ideal for environments like the MIT Supercloud where there is no internet access.
+
+To sync your runs, you will need to transfer the `wandb` directory to a machine with internet access and run:
 
 ```bash
-# Install W&B
-pip install wandb
-
-# Login to W&B
-wandb login
-# Enter your W&B API key when prompted
-
-# Alternative: Set environment variable
-export WANDB_API_KEY="your_wandb_api_key_here"
+# On your local machine, after downloading the wandb directory
+wandb sync /path/to/your/project/wandb/offline-run-*
 ```
 
-**Getting your W&B API Key:**
-1. Go to [wandb.ai](https://wandb.ai) and create account
-2. Go to [wandb.ai/authorize](https://wandb.ai/authorize)
-3. Copy your API key
+If you are working in an environment with internet access and want to log directly to W&B, you can set the `WANDB_MODE` environment variable:
+
+```bash
+export WANDB_MODE=online
+```
+
+To disable W&B logging entirely, set the `WANDB_DISABLED` environment variable:
+
+```bash
+export WANDB_DISABLED=true
+```
 
 ### 5. Model Download and Verification
 
