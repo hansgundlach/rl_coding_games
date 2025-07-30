@@ -16,7 +16,7 @@ lora:
 # --- Training Arguments (GRPOConfig) ---
 training_args:
   output_dir: "checkpoints/grpo_code_execution"
-  learning_rate: 2e-5
+  learning_rate: 0.00002
   
   # Adaptive Batch/Sequence Lengths (Script will override based on GPU/Model size)
   # For V100 + 3B: batch_size=1, gradient_accumulation_steps=8, max_prompt_length=128, max_completion_length=256
