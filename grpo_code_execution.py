@@ -102,7 +102,7 @@ offline_mode = platform_info["offline_mode"]
 if offline_mode:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
-    os.environ["WANDB_MODE"] = "disabled"
+    os.environ["WANDB_MODE"] = "offline"  # Changed from "disabled" to "offline"
     print("✅ Set global offline mode for transformers and wandb")
 
 # Add project root to Python path
