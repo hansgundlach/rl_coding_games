@@ -88,6 +88,7 @@ if offline_mode:
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.env_loader import get_api_key
+from evaluation import MBPPEvaluator, create_eval_config_for_training, print_config_summary
 
 # Initialize wandb with API key from environment (skip if offline)
 if not offline_mode:
@@ -99,6 +100,19 @@ if not offline_mode:
         print("⚠️ No W&B API key found, continuing without logging")
 else:
     print("🚫 Skipping W&B login (offline mode)")
+
+# Initialize MBPP evaluator with configurable settings
+eval_config = create_eval_config_for_training("grpo_code_game")
+print_config_summary(eval_config)
+
+mbpp_evaluator = MBPPEvaluator(eval_config)
+
+if not mbpp_evaluator.config.enabled:
+    print("⚠️ MBPP evaluation disabled - dataset not found")
+    print("💡 To enable evaluation, download MBPP dataset first:")
+    print("   python -m evaluation.mbpp_evaluator")
+else:
+    print(f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions")
 
 def run_and_capture(code: str) -> str:
     """Executes code and captures its stdout output."""
@@ -402,8 +416,34 @@ if not offline_mode:
 else:
     print("🚫 Skipping wandb initialization (offline mode)")
 
+# Run initial evaluation if enabled
+if mbpp_evaluator.should_evaluate(is_start=True):
+    print("🧪 Running initial MBPP evaluation...")
+    initial_results = mbpp_evaluator.evaluate_model(model1, tokenizer1, step=0, phase="initial")
+    
+    if wandb.run and initial_results.get("enabled", False):
+        wandb.log({
+            "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
+            "mbpp_eval/initial_problems_passed": initial_results["problems_passed"],
+            "mbpp_eval/initial_total_problems": initial_results["total_problems"],
+            "mbpp_eval/initial_eval_time": initial_results["eval_time_seconds"]
+        })
+
 # Train model
 trainer.train()
+
+# Run final evaluation if enabled
+if mbpp_evaluator.should_evaluate(is_end=True):
+    print("🧪 Running final MBPP evaluation...")
+    final_results = mbpp_evaluator.evaluate_model(model1, tokenizer1, step=trainer.state.global_step, phase="final")
+    
+    if wandb.run and final_results.get("enabled", False):
+        wandb.log({
+            "mbpp_eval/final_pass_rate": final_results["pass_rate"],
+            "mbpp_eval/final_problems_passed": final_results["problems_passed"],
+            "mbpp_eval/final_total_problems": final_results["total_problems"],
+            "mbpp_eval/final_eval_time": final_results["eval_time_seconds"]
+        })
 
 print("Training completed!")
 if not offline_mode:
