@@ -171,21 +171,21 @@ else:
 print("🧪 Setting up MBPP evaluator...")
 
 # Create evaluation config from main config
-eval_config_dict = config.get('evaluation', {})
+eval_config_dict = config.get("evaluation", {})
 
 # Update results directory to logs folder if running in SLURM
-log_dir = os.environ.get('GRPO_LOG_DIR', 'logs')
-if 'GRPO_LOG_DIR' in os.environ:
-    eval_config_dict['results_dir'] = log_dir
+log_dir = os.environ.get("GRPO_LOG_DIR", "logs")
+if "GRPO_LOG_DIR" in os.environ:
+    eval_config_dict["results_dir"] = log_dir
     print(f"📊 Evaluation results will be saved to: {log_dir}")
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
 
 # Print evaluation config summary
-print("\n" + "="*50)
+print("\n" + "=" * 50)
 print("📊 MBPP Evaluation Configuration")
-print("="*50)
+print("=" * 50)
 print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
 if eval_config.enabled:
     print(f"Questions: {eval_config.num_questions}")
@@ -196,7 +196,7 @@ if eval_config.enabled:
     print(f"Temperature: {eval_config.temperature}")
     print(f"Max tokens: {eval_config.max_new_tokens}")
     print(f"Timeout: {eval_config.timeout_seconds}s")
-print("="*50 + "\n")
+print("=" * 50 + "\n")
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
@@ -550,8 +550,8 @@ else:
 
 # Update output directory to logs folder if running in SLURM
 output_dir = config["training_args"]["output_dir"]
-if 'GRPO_LOG_DIR' in os.environ:
-    output_dir = os.path.join(os.environ['GRPO_LOG_DIR'], 'checkpoints')
+if "GRPO_LOG_DIR" in os.environ:
+    output_dir = os.path.join(os.environ["GRPO_LOG_DIR"], "checkpoints")
     print(f"💾 Checkpoints will be saved to: {output_dir}")
 
 training_args = GRPOConfig(
@@ -619,6 +619,16 @@ if config["evaluation"]["enabled_initial"] and mbpp_evaluator.should_evaluate(
         model1, tokenizer1, step=0, phase="initial"
     )
 
+    # --- DEBUGGING W&B LOGGING FOR INITIAL EVALUATION ---
+    print(f"DEBUG: Initial MBPP Results: {initial_results}")
+    print(f"DEBUG: WANDB_ENABLED: {WANDB_ENABLED}")
+    print(f"DEBUG: wandb.run is active: {bool(wandb.run)}")
+    print(f"DEBUG: initial_results['enabled']: {initial_results.get('enabled', False)}")
+    print(
+        f"DEBUG: Condition for logging initial MBPP: {WANDB_ENABLED and bool(wandb.run) and initial_results.get('enabled', False)}"
+    )
+    # --- END DEBUGGING ---
+
     if (
         WANDB_ENABLED and wandb.run and initial_results.get("enabled", False)
     ):  # Only log if W&B is enabled
@@ -642,6 +652,16 @@ if config["evaluation"]["enabled_final"] and mbpp_evaluator.should_evaluate(
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
     )
+
+    # --- DEBUGGING W&B LOGGING FOR FINAL EVALUATION ---
+    print(f"DEBUG: Final MBPP Results: {final_results}")
+    print(f"DEBUG: WANDB_ENABLED: {WANDB_ENABLED}")
+    print(f"DEBUG: wandb.run is active: {bool(wandb.run)}")
+    print(f"DEBUG: final_results['enabled']: {final_results.get('enabled', False)}")
+    print(
+        f"DEBUG: Condition for logging final MBPP: {WANDB_ENABLED and bool(wandb.run) and final_results.get('enabled', False)}"
+    )
+    # --- END DEBUGGING ---
 
     if (
         WANDB_ENABLED and wandb.run and final_results.get("enabled", False)
