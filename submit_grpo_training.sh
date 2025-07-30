@@ -1,14 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=grpo_code_exec
-#SBATCH --output=logs/grpo_training_%j.out
-#SBATCH --error=logs/grpo_training_%j.err
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
+#SBATCH --output=slurm-grpo-%j.out
+#SBATCH --error=slurm-grpo-%j.err
+#SBATCH --partition=xeon-g6-volta
+#SBATCH --gres=gpu:volta:1
+#SBATCH --nodes=1
 #SBATCH --mem=32G
 #SBATCH --time=12:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
 
 # MIT Supercloud SLURM script for GRPO Code Execution Training
 # Single V100 GPU training with logs output
