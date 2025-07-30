@@ -23,6 +23,11 @@ import time
 import signal
 
 
+# --- User Configuration ---
+WANDB_ENABLED = True  # Set to False to completely disable W&B logging
+# --- End User Configuration ---
+
+
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
     if not torch.cuda.is_available():
@@ -98,12 +103,23 @@ print(
 # Extract values for easier use
 offline_mode = platform_info["offline_mode"]
 
-# Set global environment variables for transformers library
-if offline_mode:
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    os.environ["HF_DATASETS_OFFLINE"] = "1"
-    os.environ["WANDB_MODE"] = "offline"  # Changed from "disabled" to "offline"
-    print("✅ Set global offline mode for transformers and wandb")
+# Set global environment variables for transformers library and W&B
+if WANDB_ENABLED:  # Check if W&B is enabled by user
+    if offline_mode:
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+        os.environ["WANDB_MODE"] = "offline"  # Changed from "disabled" to "offline"
+        print("✅ Set global offline mode for transformers and wandb")
+    else:
+        # For online mode, ensure offline flags are not set
+        os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        os.environ.pop("HF_DATASETS_OFFLINE", None)
+        os.environ.pop(
+            "WANDB_MODE", None
+        )  # Remove explicit WANDB_MODE if it was set to disabled
+else:  # If WANDB_ENABLED is False, explicitly disable W&B
+    os.environ["WANDB_MODE"] = "disabled"
+    print("🚫 W&B logging explicitly disabled by user configuration.")
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -115,16 +131,18 @@ from evaluation import (
     print_config_summary,
 )
 
-# Initialize wandb with API key from environment (skip if offline)
-if not offline_mode:
+# Initialize wandb with API key from environment (skip if W&B is not enabled)
+if WANDB_ENABLED:  # Only try to log in if W&B is enabled
     wandb_key = get_api_key("wandb", required=False)
     if wandb_key:
         wandb.login(key=wandb_key)
         print("✓ Logged into W&B using environment variable")
     else:
-        print("⚠️ No W&B API key found, continuing without logging")
+        print(
+            "⚠️ No W&B API key found, continuing with W&B logging (if online) or local saves (if offline)."
+        )
 else:
-    print("🚫 Skipping W&B login (offline mode)")
+    print("🚫 Skipping W&B login (W&B is disabled by user).")
 
 # Initialize MBPP evaluator with configurable settings
 eval_config = create_eval_config_for_training("grpo_code_execution")
@@ -379,7 +397,7 @@ def execution_reward_function(completions, **kwargs):
         rewards.append(reward)
 
     # Log metrics to wandb after processing the entire batch
-    if wandb.run:  # Ensure wandb is initialized before logging
+    if WANDB_ENABLED and wandb.run:  # Only log if W&B is enabled and run is active
         avg_batch_reward = sum(rewards) / len(rewards) if rewards else 0
         success_rate = successful_executions / len(completions) if completions else 0
 
@@ -441,7 +459,7 @@ training_args = GRPOConfig(
     dataloader_pin_memory=(
         False if platform_info["gpu_type"] == "V100" else True
     ),  # Memory optimization for V100
-    report_to=["wandb"] if not offline_mode else [],
+    report_to=["wandb"] if WANDB_ENABLED else [],  # report to wandb only if enabled
     remove_unused_columns=False,
     logging_steps=1,
     max_steps=2,  # Added this line to limit to 2 training steps
@@ -469,12 +487,13 @@ trainer = GRPOTrainer(
 
 print("Starting GRPO training for code execution...")
 
-# Initialize wandb run (only if not in offline mode)
-if not offline_mode:
+# Initialize wandb run (only if W&B is enabled by user)
+if WANDB_ENABLED:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     wandb.init(project=f"qwen-code-execution-grpo-{timestamp}")
-else:
-    print("🚫 Skipping wandb initialization (offline mode)")
+    print(
+        f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})"
+    )  # Adjusted print message
 
 # Run initial evaluation if enabled
 if mbpp_evaluator.should_evaluate(is_start=True):
@@ -483,7 +502,9 @@ if mbpp_evaluator.should_evaluate(is_start=True):
         model1, tokenizer1, step=0, phase="initial"
     )
 
-    if wandb.run and initial_results.get("enabled", False):
+    if (
+        WANDB_ENABLED and wandb.run and initial_results.get("enabled", False)
+    ):  # Only log if W&B is enabled
         wandb.log(
             {
                 "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
@@ -503,7 +524,9 @@ if mbpp_evaluator.should_evaluate(is_end=True):
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
     )
 
-    if wandb.run and final_results.get("enabled", False):
+    if (
+        WANDB_ENABLED and wandb.run and final_results.get("enabled", False)
+    ):  # Only log if W&B is enabled
         wandb.log(
             {
                 "mbpp_eval/final_pass_rate": final_results["pass_rate"],
@@ -514,7 +537,8 @@ if mbpp_evaluator.should_evaluate(is_end=True):
         )
 
 print("Code execution training completed!")
-if not offline_mode:
+if WANDB_ENABLED:  # Only finish if W&B was enabled
     wandb.finish()
+    print("✅ Training completed (W&B run finished)")  # Adjusted print message
 else:
-    print("✅ Training completed (offline mode - no wandb to finish)")
+    print("✅ Training completed (W&B logging was disabled)")  # New message
