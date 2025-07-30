@@ -152,11 +152,7 @@ from utils.vllm_client import (
     cleanup_vllm_integration,
     get_vllm_integration,
 )
-from evaluation import (
-    MBPPEvaluator,
-    create_eval_config_for_training,
-    print_config_summary,
-)
+from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
 if WANDB_ENABLED:  # Only try to log in if W&B is enabled
@@ -171,17 +167,37 @@ if WANDB_ENABLED:  # Only try to log in if W&B is enabled
 else:
     print("🚫 Skipping W&B login (W&B is disabled by user).")
 
-# Initialize MBPP evaluator with configurable settings
+# Initialize MBPP evaluator with consolidated config
 print("🧪 Setting up MBPP evaluator...")
-eval_config = create_eval_config_for_training("grpo_code_execution")
 
-# Update eval config to save to logs directory if GRPO_LOG_DIR is set
+# Create evaluation config from main config
+eval_config_dict = config.get('evaluation', {})
+
+# Update results directory to logs folder if running in SLURM
 log_dir = os.environ.get('GRPO_LOG_DIR', 'logs')
-if hasattr(eval_config, 'results_dir'):
-    eval_config.results_dir = log_dir
-print(f"📊 Evaluation results will be saved to: {log_dir}")
+if 'GRPO_LOG_DIR' in os.environ:
+    eval_config_dict['results_dir'] = log_dir
+    print(f"📊 Evaluation results will be saved to: {log_dir}")
 
-print_config_summary(eval_config)
+# Create EvalConfig object from consolidated config
+eval_config = EvalConfig(**eval_config_dict)
+
+# Print evaluation config summary
+print("\n" + "="*50)
+print("📊 MBPP Evaluation Configuration")
+print("="*50)
+print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
+if eval_config.enabled:
+    print(f"Questions: {eval_config.num_questions}")
+    print(f"Initial eval: {'✅' if config['evaluation']['enabled_initial'] else '❌'}")
+    print(f"Final eval: {'✅' if config['evaluation']['enabled_final'] else '❌'}")
+    print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
+    print(f"Results dir: {eval_config.results_dir}")
+    print(f"Temperature: {eval_config.temperature}")
+    print(f"Max tokens: {eval_config.max_new_tokens}")
+    print(f"Timeout: {eval_config.timeout_seconds}s")
+print("="*50 + "\n")
+
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
 if not mbpp_evaluator.config.enabled:
