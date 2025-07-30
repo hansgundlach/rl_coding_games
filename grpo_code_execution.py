@@ -21,15 +21,31 @@ import subprocess
 import tempfile
 import time
 import signal
+import yaml
+import argparse
 
 
-# --- User Configuration ---
-WANDB_ENABLED = True  # Set to False to completely disable W&B logging
-# --- End User Configuration ---
+print("🚀 Starting GRPO Code Execution Training...")
+print("📋 Initializing components...")
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='GRPO Code Execution Training')
+parser.add_argument('--config', type=str, default='configs/grpo_code_execution.yaml',
+                    help='Path to configuration file')
+args = parser.parse_args()
+
+# Load configuration
+print(f"📝 Loading configuration from: {args.config}")
+with open(args.config, 'r') as f:
+    config = yaml.safe_load(f)
+
+# Extract config values for easy access
+WANDB_ENABLED = config['wandb']['enabled']
 
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
+    print("🔍 Detecting platform and GPU capabilities...")
     if not torch.cuda.is_available():
         return {
             "supports_bf16": False,
@@ -91,6 +107,7 @@ def detect_platform_and_gpu():
 
 
 # Auto-detect platform and capabilities
+print("🔧 Running platform detection...")
 platform_info = detect_platform_and_gpu()
 print(f"🔍 Auto-detected: {platform_info['platform']} platform")
 print(
@@ -124,6 +141,7 @@ else:  # If WANDB_ENABLED is False, explicitly disable W&B
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from evaluation import (
     MBPPEvaluator,
@@ -145,6 +163,7 @@ else:
     print("🚫 Skipping W&B login (W&B is disabled by user).")
 
 # Initialize MBPP evaluator with configurable settings
+print("🧪 Setting up MBPP evaluator...")
 eval_config = create_eval_config_for_training("grpo_code_execution")
 print_config_summary(eval_config)
 
@@ -246,12 +265,13 @@ prompt = (
 )
 
 # Create a dataset of prompts
-dataset = Dataset.from_dict({"prompt": [prompt] * 1000})
+dataset_size = config['dataset']['size']
+dataset = Dataset.from_dict({"prompt": [prompt] * dataset_size})
 
 print(f"Created dataset: {dataset}")
 
 # Set up model cache directory
-cache_dir = "./model_cache"
+cache_dir = config['model']['cache_dir']
 os.makedirs(cache_dir, exist_ok=True)
 
 # Load the main model (trainable) - prefer 1.5B for better memory efficiency
@@ -287,9 +307,10 @@ if offline_mode:
         model_id = "Qwen/Qwen2.5-1.5B"  # fallback
         print(f"⚠️  No cached models found, attempting: {model_id}")
 else:
-    model_id = "Qwen/Qwen2.5-1.5B"  # Prefer smaller model for better performance
+    model_id = config['model']['id']  # Use configured model
 
-print(f"Loading trainable model: {model_id}")
+print(f"📥 Loading trainable model: {model_id}")
+print("⏳ This may take 2-3 minutes depending on model size and storage speed...")
 
 model1 = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -298,6 +319,7 @@ model1 = AutoModelForCausalLM.from_pretrained(
     cache_dir=cache_dir,
     local_files_only=offline_mode,
 )
+print("🔤 Loading tokenizer...")
 tokenizer1 = AutoTokenizer.from_pretrained(
     model_id, cache_dir=cache_dir, local_files_only=offline_mode
 )
@@ -306,12 +328,14 @@ if tokenizer1.pad_token is None:
     tokenizer1.pad_token = tokenizer1.eos_token
 
 # Load LoRA
+print("🔧 Setting up LoRA configuration...")
 lora_config = LoraConfig(
-    task_type="CAUSAL_LM",
-    r=16,
-    lora_alpha=32,
-    target_modules="all-linear",
+    task_type=config['lora']['task_type'],
+    r=config['lora']['r'],
+    lora_alpha=config['lora']['lora_alpha'],
+    target_modules=config['lora']['target_modules'],
 )
+print("🎯 Applying LoRA to model...")
 model1 = get_peft_model(model1, lora_config)
 print(model1.print_trainable_parameters())
 
@@ -353,31 +377,31 @@ def execution_reward_function(completions, **kwargs):
             continue
 
         # Execute the code safely
-        execution_result = safe_execute_code(code, timeout=3)
+        execution_result = safe_execute_code(code, timeout=config['execution']['timeout'])
 
         # Calculate reward based on execution result
         if execution_result["success"]:
             if execution_result["output"]:
-                reward = 1.0  # Perfect: runs and produces output
+                reward = config['rewards']['success_with_output']  # Perfect: runs and produces output
                 successful_executions += 1
             else:
-                reward = 0.5  # Good: runs but no output
+                reward = config['rewards']['success_no_output']  # Good: runs but no output
                 successful_executions += 1
         elif execution_result["timeout"]:
-            reward = -1.0  # Bad: infinite loop or too slow
+            reward = config['rewards']['timeout_error']  # Bad: infinite loop or too slow
             timeout_executions += 1
         elif (
             "SyntaxError" in execution_result["error"]
             or "IndentationError" in execution_result["error"]
         ):
-            reward = -0.5  # Minor: syntax issues
+            reward = config['rewards']['syntax_error']  # Minor: syntax issues
             syntax_errors += 1
         else:
-            reward = -1.0  # Bad: runtime errors
+            reward = config['rewards']['runtime_error']  # Bad: runtime errors
             failed_executions += 1
 
         # Debug output (show first few)
-        if i < 3:
+        if i < config['execution']['debug_completions']:
             print("=" * 50)
             print(f"Completion {i+1}:")
             print(f"Code: {code[:200]}...")
@@ -444,25 +468,25 @@ else:
     print("🔧 Using standard memory settings for A100/other GPUs")
 
 training_args = GRPOConfig(
-    output_dir="checkpoints/grpo_code_execution",
-    learning_rate=2e-5,
+    output_dir=config['training_args']['output_dir'],
+    learning_rate=config['training_args']['learning_rate'],
     per_device_train_batch_size=batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
-    num_generations=2,  # GRPO requires minimum 2
-    optim="adamw_8bit",
-    num_train_epochs=1,
+    num_generations=config['training_args']['num_generations'],
+    optim=config['training_args']['optim'],
+    num_train_epochs=config['training_args']['num_train_epochs'],
     bf16=platform_info["supports_bf16"],  # Auto-configured based on GPU type
     fp16=not platform_info["supports_bf16"],  # Use fp16 if bf16 not supported
-    gradient_checkpointing=False,  # Memory optimization for V100
+    gradient_checkpointing=config['training_args']['gradient_checkpointing'],
     dataloader_pin_memory=(
-        False if platform_info["gpu_type"] == "V100" else True
+        False if platform_info["gpu_type"] == "V100" else config['training_args']['dataloader_pin_memory']
     ),  # Memory optimization for V100
     report_to=["wandb"] if WANDB_ENABLED else [],  # report to wandb only if enabled
-    remove_unused_columns=False,
-    logging_steps=1,
-    max_steps=2,  # Added this line to limit to 2 training steps
+    remove_unused_columns=config['training_args']['remove_unused_columns'],
+    logging_steps=config['training_args']['logging_steps'],
+    max_steps=config['training_args']['max_steps'],
 )
 
 # Fix model config path for GRPOTrainer if in offline mode
@@ -478,6 +502,7 @@ if offline_mode:
         print(f"🔧 Set model config path to: {cached_model_dirs[0]}")
 
 # Create trainer
+print("🏋️ Initializing GRPO trainer...")
 trainer = GRPOTrainer(
     model=model1,
     reward_funcs=[execution_reward_function],
@@ -490,13 +515,14 @@ print("Starting GRPO training for code execution...")
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    wandb.init(project=f"qwen-code-execution-grpo-{timestamp}")
+    project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
+    wandb.init(project=project_name)
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})"
     )  # Adjusted print message
 
 # Run initial evaluation if enabled
-if mbpp_evaluator.should_evaluate(is_start=True):
+if config['evaluation']['enabled_initial'] and mbpp_evaluator.should_evaluate(is_start=True):
     print("🧪 Running initial MBPP evaluation...")
     initial_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=0, phase="initial"
@@ -518,7 +544,7 @@ if mbpp_evaluator.should_evaluate(is_start=True):
 trainer.train()
 
 # Run final evaluation if enabled
-if mbpp_evaluator.should_evaluate(is_end=True):
+if config['evaluation']['enabled_final'] and mbpp_evaluator.should_evaluate(is_end=True):
     print("🧪 Running final MBPP evaluation...")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
