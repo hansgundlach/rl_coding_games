@@ -29,18 +29,22 @@ print("🚀 Starting GRPO Code Execution Training...")
 print("📋 Initializing components...")
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description='GRPO Code Execution Training')
-parser.add_argument('--config', type=str, default='configs/grpo_code_execution.yaml',
-                    help='Path to configuration file')
+parser = argparse.ArgumentParser(description="GRPO Code Execution Training")
+parser.add_argument(
+    "--config",
+    type=str,
+    default="configs/grpo_code_execution.yaml",
+    help="Path to configuration file",
+)
 args = parser.parse_args()
 
 # Load configuration
 print(f"📝 Loading configuration from: {args.config}")
-with open(args.config, 'r') as f:
+with open(args.config, "r") as f:
     config = yaml.safe_load(f)
 
 # Extract config values for easy access
-WANDB_ENABLED = config['wandb']['enabled']
+WANDB_ENABLED = config["wandb"]["enabled"]
 
 
 def detect_platform_and_gpu():
@@ -143,7 +147,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
-from utils.vllm_client import initialize_vllm_integration, cleanup_vllm_integration, get_vllm_integration
+from utils.vllm_client import (
+    initialize_vllm_integration,
+    cleanup_vllm_integration,
+    get_vllm_integration,
+)
 from evaluation import (
     MBPPEvaluator,
     create_eval_config_for_training,
@@ -166,8 +174,14 @@ else:
 # Initialize MBPP evaluator with configurable settings
 print("🧪 Setting up MBPP evaluator...")
 eval_config = create_eval_config_for_training("grpo_code_execution")
-print_config_summary(eval_config)
 
+# Update eval config to save to logs directory if GRPO_LOG_DIR is set
+log_dir = os.environ.get('GRPO_LOG_DIR', 'logs')
+if hasattr(eval_config, 'results_dir'):
+    eval_config.results_dir = log_dir
+print(f"📊 Evaluation results will be saved to: {log_dir}")
+
+print_config_summary(eval_config)
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
 if not mbpp_evaluator.config.enabled:
@@ -266,13 +280,13 @@ prompt = (
 )
 
 # Create a dataset of prompts
-dataset_size = config['dataset']['size']
+dataset_size = config["dataset"]["size"]
 dataset = Dataset.from_dict({"prompt": [prompt] * dataset_size})
 
 print(f"Created dataset: {dataset}")
 
 # Set up model cache directory
-cache_dir = config['model']['cache_dir']
+cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
 # Load the main model (trainable) - prefer 1.5B for better memory efficiency
@@ -308,7 +322,7 @@ if offline_mode:
         model_id = "Qwen/Qwen2.5-1.5B"  # fallback
         print(f"⚠️  No cached models found, attempting: {model_id}")
 else:
-    model_id = config['model']['id']  # Use configured model
+    model_id = config["model"]["id"]  # Use configured model
 
 print(f"📥 Loading trainable model: {model_id}")
 print("⏳ This may take 2-3 minutes depending on model size and storage speed...")
@@ -331,10 +345,10 @@ if tokenizer1.pad_token is None:
 # Load LoRA
 print("🔧 Setting up LoRA configuration...")
 lora_config = LoraConfig(
-    task_type=config['lora']['task_type'],
-    r=config['lora']['r'],
-    lora_alpha=config['lora']['lora_alpha'],
-    target_modules=config['lora']['target_modules'],
+    task_type=config["lora"]["task_type"],
+    r=config["lora"]["r"],
+    lora_alpha=config["lora"]["lora_alpha"],
+    target_modules=config["lora"]["target_modules"],
 )
 print("🎯 Applying LoRA to model...")
 model1 = get_peft_model(model1, lora_config)
@@ -342,13 +356,11 @@ print(model1.print_trainable_parameters())
 
 # Initialize vLLM integration if enabled
 vllm_integration = None
-if config.get('vllm', {}).get('enabled', False):
+if config.get("vllm", {}).get("enabled", False):
     print("🚀 Initializing vLLM integration...")
     try:
         vllm_integration = initialize_vllm_integration(
-            config['vllm'], 
-            model_id, 
-            offline_mode
+            config["vllm"], model_id, offline_mode
         )
         if vllm_integration.initialize():
             print("✅ vLLM server started successfully")
@@ -378,15 +390,23 @@ def execution_reward_function(completions, **kwargs):
     failed_executions = 0
     timeout_executions = 0
     syntax_errors = 0
-    
+
     # Performance tracking
     vllm_used = False
     vllm_integration = get_vllm_integration()
-    if (vllm_integration and 
-        vllm_integration.vllm_config.enabled and 
-        vllm_integration.vllm_config.integration.get('use_for_grpo_completions', False)):
+    if (
+        vllm_integration
+        and vllm_integration.vllm_config.enabled
+        and vllm_integration.vllm_config.integration.get(
+            "use_for_grpo_completions", False
+        )
+    ):
         vllm_used = True
-        if config.get('vllm', {}).get('integration', {}).get('log_performance_comparison', False):
+        if (
+            config.get("vllm", {})
+            .get("integration", {})
+            .get("log_performance_comparison", False)
+        ):
             print(f"🚀 Using vLLM for {len(completions)} completions")
 
     for i, comp in enumerate(completions):
@@ -409,31 +429,39 @@ def execution_reward_function(completions, **kwargs):
             continue
 
         # Execute the code safely
-        execution_result = safe_execute_code(code, timeout=config['execution']['timeout'])
+        execution_result = safe_execute_code(
+            code, timeout=config["execution"]["timeout"]
+        )
 
         # Calculate reward based on execution result
         if execution_result["success"]:
             if execution_result["output"]:
-                reward = config['rewards']['success_with_output']  # Perfect: runs and produces output
+                reward = config["rewards"][
+                    "success_with_output"
+                ]  # Perfect: runs and produces output
                 successful_executions += 1
             else:
-                reward = config['rewards']['success_no_output']  # Good: runs but no output
+                reward = config["rewards"][
+                    "success_no_output"
+                ]  # Good: runs but no output
                 successful_executions += 1
         elif execution_result["timeout"]:
-            reward = config['rewards']['timeout_error']  # Bad: infinite loop or too slow
+            reward = config["rewards"][
+                "timeout_error"
+            ]  # Bad: infinite loop or too slow
             timeout_executions += 1
         elif (
             "SyntaxError" in execution_result["error"]
             or "IndentationError" in execution_result["error"]
         ):
-            reward = config['rewards']['syntax_error']  # Minor: syntax issues
+            reward = config["rewards"]["syntax_error"]  # Minor: syntax issues
             syntax_errors += 1
         else:
-            reward = config['rewards']['runtime_error']  # Bad: runtime errors
+            reward = config["rewards"]["runtime_error"]  # Bad: runtime errors
             failed_executions += 1
 
         # Debug output (show first few)
-        if i < config['execution']['debug_completions']:
+        if i < config["execution"]["debug_completions"]:
             print("=" * 50)
             print(f"Completion {i+1}:")
             print(f"Code: {code[:200]}...")
@@ -466,12 +494,12 @@ def execution_reward_function(completions, **kwargs):
             "execution/syntax_errors": syntax_errors,
             "execution/total_completions": len(completions),
         }
-        
+
         # Add vLLM performance tracking
         if vllm_used:
             wandb_metrics["vllm/used_for_completions"] = True
             wandb_metrics["vllm/batch_size"] = len(completions)
-        
+
         wandb.log(wandb_metrics)
 
     return rewards
@@ -504,26 +532,34 @@ else:
     max_completion_length = 512  # Longer for code generation
     print("🔧 Using standard memory settings for A100/other GPUs")
 
+# Update output directory to logs folder if running in SLURM
+output_dir = config["training_args"]["output_dir"]
+if 'GRPO_LOG_DIR' in os.environ:
+    output_dir = os.path.join(os.environ['GRPO_LOG_DIR'], 'checkpoints')
+    print(f"💾 Checkpoints will be saved to: {output_dir}")
+
 training_args = GRPOConfig(
-    output_dir=config['training_args']['output_dir'],
-    learning_rate=config['training_args']['learning_rate'],
+    output_dir=output_dir,
+    learning_rate=config["training_args"]["learning_rate"],
     per_device_train_batch_size=batch_size,
     gradient_accumulation_steps=gradient_accumulation_steps,
     max_prompt_length=max_prompt_length,
     max_completion_length=max_completion_length,
-    num_generations=config['training_args']['num_generations'],
-    optim=config['training_args']['optim'],
-    num_train_epochs=config['training_args']['num_train_epochs'],
+    num_generations=config["training_args"]["num_generations"],
+    optim=config["training_args"]["optim"],
+    num_train_epochs=config["training_args"]["num_train_epochs"],
     bf16=platform_info["supports_bf16"],  # Auto-configured based on GPU type
     fp16=not platform_info["supports_bf16"],  # Use fp16 if bf16 not supported
-    gradient_checkpointing=config['training_args']['gradient_checkpointing'],
+    gradient_checkpointing=config["training_args"]["gradient_checkpointing"],
     dataloader_pin_memory=(
-        False if platform_info["gpu_type"] == "V100" else config['training_args']['dataloader_pin_memory']
+        False
+        if platform_info["gpu_type"] == "V100"
+        else config["training_args"]["dataloader_pin_memory"]
     ),  # Memory optimization for V100
     report_to=["wandb"] if WANDB_ENABLED else [],  # report to wandb only if enabled
-    remove_unused_columns=config['training_args']['remove_unused_columns'],
-    logging_steps=config['training_args']['logging_steps'],
-    max_steps=config['training_args']['max_steps'],
+    remove_unused_columns=config["training_args"]["remove_unused_columns"],
+    logging_steps=config["training_args"]["logging_steps"],
+    max_steps=config["training_args"]["max_steps"],
 )
 
 # Fix model config path for GRPOTrainer if in offline mode
@@ -559,7 +595,9 @@ if WANDB_ENABLED:
     )  # Adjusted print message
 
 # Run initial evaluation if enabled
-if config['evaluation']['enabled_initial'] and mbpp_evaluator.should_evaluate(is_start=True):
+if config["evaluation"]["enabled_initial"] and mbpp_evaluator.should_evaluate(
+    is_start=True
+):
     print("🧪 Running initial MBPP evaluation...")
     initial_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=0, phase="initial"
@@ -581,7 +619,9 @@ if config['evaluation']['enabled_initial'] and mbpp_evaluator.should_evaluate(is
 trainer.train()
 
 # Run final evaluation if enabled
-if config['evaluation']['enabled_final'] and mbpp_evaluator.should_evaluate(is_end=True):
+if config["evaluation"]["enabled_final"] and mbpp_evaluator.should_evaluate(
+    is_end=True
+):
     print("🧪 Running final MBPP evaluation...")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
