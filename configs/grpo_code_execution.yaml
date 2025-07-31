@@ -53,8 +53,8 @@ evaluation:
   enabled: True                    # Enable/disable evaluation entirely
   enabled_initial: True            # Run initial MBPP evaluation
   enabled_final: True              # Run final MBPP evaluation
-  num_questions: 5                # Number of MBPP problems to evaluate
-  eval_interval_steps: 2        # Run evaluation every N steps (null = no intermediate evals)
+  num_questions: 3                # Number of MBPP problems to evaluate
+  eval_interval_steps: 1        # Run evaluation every N steps (null = no intermediate evals)
   
   # Dataset Configuration
   dataset_path: null               # Path to MBPP dataset (null = auto-detect)
