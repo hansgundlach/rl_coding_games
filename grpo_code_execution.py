@@ -636,8 +636,8 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
     # --- END DEBUGGING ---
 
     if (
-        WANDB_ENABLED and wandb.run and initial_results.get("enabled", False)
-    ):  # Only log if W&B is enabled
+        WANDB_ENABLED and wandb.run and "pass_rate" in initial_results
+    ):  # Only log if W&B is enabled and evaluation ran successfully
         wandb.log(
             {
                 "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
@@ -670,8 +670,8 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.should_eva
     # --- END DEBUGGING ---
 
     if (
-        WANDB_ENABLED and wandb.run and final_results.get("enabled", False)
-    ):  # Only log if W&B is enabled
+        WANDB_ENABLED and wandb.run and "pass_rate" in final_results
+    ):  # Only log if W&B is enabled and evaluation ran successfully
         wandb.log(
             {
                 "mbpp_eval/final_pass_rate": final_results["pass_rate"],
