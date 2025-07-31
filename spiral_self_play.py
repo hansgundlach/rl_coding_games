@@ -431,6 +431,10 @@ def compute_policy_gradient_loss(
 
             # Compute advantage using RAE
             advantage = rae.compute_advantage(player_id, player_reward)
+            # Convert advantage to a detached PyTorch tensor
+            advantage_tensor = torch.tensor(
+                advantage, device=device, dtype=torch.float32
+            ).detach()
 
             # Process moves one at a time to minimize memory usage
             trajectory_loss = torch.tensor(
@@ -496,7 +500,9 @@ def compute_policy_gradient_loss(
 
                 # REINFORCE loss: -advantage * sum(log_probs)
                 sequence_log_prob = token_log_probs.sum()
-                loss = -advantage * sequence_log_prob
+                loss = (
+                    -advantage_tensor * sequence_log_prob
+                )  # Use the tensor version of advantage
 
                 trajectory_loss += loss
                 num_updates += 1
@@ -583,7 +589,7 @@ rae = RoleConditionedAdvantageEstimation(alpha=0.95)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
 
 # Training parameters following SPIRAL paper concepts
-num_steps = 200  # Simplified for demo
+num_steps = 2  # Changed from 200 to 2 for testing
 
 # Adaptive batch size based on GPU memory
 if platform_info["gpu_type"] == "V100":

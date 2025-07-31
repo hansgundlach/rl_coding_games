@@ -173,6 +173,12 @@ print("🧪 Setting up MBPP evaluator...")
 # Create evaluation config from main config
 eval_config_dict = config.get("evaluation", {})
 
+# Remove keys not expected by EvalConfig constructor
+# These are used for controlling when evaluation runs, not how it's configured
+eval_config_dict.pop("enabled_initial", None)
+eval_config_dict.pop("enabled_final", None)
+eval_config_dict.pop("eval_interval_steps", None)
+
 # Update results directory to logs folder if running in SLURM
 log_dir = os.environ.get("GRPO_LOG_DIR", "logs")
 if "GRPO_LOG_DIR" in os.environ:
