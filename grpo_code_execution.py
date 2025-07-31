@@ -609,11 +609,12 @@ print("Starting GRPO training for code execution...")
 
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Create human-readable timestamp: Jul31_2025_14h30m
+    timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
     wandb.init(project=project_name)
     print(
-        f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})"
+        f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )  # Adjusted print message
 
 # Run initial evaluation if enabled
@@ -660,6 +661,11 @@ class IntervalEvaluationCallback(TrainerCallback):
         self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
     
     def on_step_end(self, args, state, control, **kwargs):
+        # DEBUG: Always print to see if callback is being called
+        print(f"🔍 CALLBACK DEBUG: on_step_end called at step {state.global_step}")
+        print(f"🔍 CALLBACK DEBUG: eval_interval={self.eval_interval}, evaluator.enabled={self.evaluator.config.enabled}")
+        print(f"🔍 CALLBACK DEBUG: condition check: step > 0: {state.global_step > 0}, step % interval == 0: {state.global_step % self.eval_interval == 0 if self.eval_interval else 'N/A'}")
+        
         # Run interval evaluation if enabled and it's time
         if (self.eval_interval and 
             self.evaluator.config.enabled and

@@ -1,0 +1,534 @@
+🚀 Starting GRPO Code Execution Training on Supercloud V100
+============================================================
+Job ID: 1830308
+Node: d-14-6-1
+GPU: GPU-6bc3ef96-b85d-308c-2b58-442956fdd761
+Start time: Wed Jul 30 16:31:53 EDT 2025
+
+🔧 Setting up environment...
+ERROR: Unable to locate a modulefile for 'cuda/12.1'
+ERROR: Unable to locate a modulefile for 'python/3.9'
+🐍 Activating virtual environment...
+🌐 Setting offline mode for Supercloud...
+📁 Created job log directory: logs/job_1830308
+🎮 GPU Information:
+Tesla V100-PCIE-32GB, 32768, 32495
+
+💾 Memory Information:
+               total        used        free      shared  buff/cache   available
+Mem:           377Gi       4.4Gi       309Gi       2.0Mi        63Gi       370Gi
+Swap:             0B          0B          0B
+
+📦 Environment Information:
+Python 3.9.16
+datasets                          4.0.0
+fastrlock                         0.8.3
+peft                              0.16.0
+torch                             2.7.1
+torchaudio                        2.7.1
+torchvision                       0.22.1
+transformers                      4.54.0
+trl                               0.19.1
+vllm                              0.10.0
+
+🏋️ Starting GRPO training at Wed Jul 30 16:33:08 EDT 2025...
+Command: python grpo_code_execution.py --config configs/grpo_code_execution.yaml
+
+⚙️  Running in WANDB offline mode
+INFO 07-30 16:42:36 [__init__.py:235] Automatically detected platform cuda.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+OpenSpiel exception: Unknown game 'connect_four_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'go_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'tic_tac_toe_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'universal_poker_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+🚀 Starting GRPO Code Execution Training...
+📋 Initializing components...
+📝 Loading configuration from: configs/grpo_code_execution.yaml
+🔧 Running platform detection...
+🔍 Detecting platform and GPU capabilities...
+🔍 Auto-detected: Supercloud platform
+🎮 GPU: V100, BF16 support: False
+🌐 Offline mode: True (detected Supercloud environment)
+✅ Set global offline mode for transformers and wandb
+📦 Loading utility modules...
+✓ Loaded environment from .env
+No pygame installed, ignoring import
+[kaggle_environments.envs.open_spiel.open_spiel] INFO: Successfully loaded OpenSpiel environments: 2.
+INFO:kaggle_environments.envs.open_spiel.open_spiel:Successfully loaded OpenSpiel environments: 2.
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    open_spiel_chess
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   open_spiel_chess
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    open_spiel_gin_rummy
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel.open_spiel] INFO: OpenSpiel games skipped: 4.
+INFO:kaggle_environments.envs.open_spiel.open_spiel:OpenSpiel games skipped: 4.
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    connect_four
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   connect_four
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    go(board_size=9)
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   go(board_size=9)
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    tic_tac_toe
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   tic_tac_toe
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    universal_poker(betting=nolimit,bettingAbstraction=fullgame,blind=1 2,firstPlayer=2 1 1 1,numBoardCards=0 3 1 1,numHoleCards=2,numPlayers=2,numRanks=13,numRounds=4,numSuits=4,stack=400 400)
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   universal_poker(betting=nolimit,bettingAbstraction=fullgame,blind=1 2,firstPlayer=2 1 1 1,numBoardCards=0 3 1 1,numHoleCards=2,numPlayers=2,numRanks=13,numRounds=4,numSuits=4,stack=400 400)
+wandb: WARNING Unable to verify login in offline mode.
+✓ Logged into W&B using environment variable
+🧪 Setting up MBPP evaluator...
+📊 Evaluation results will be saved to: logs/job_1830308
+Traceback (most recent call last):
+  File "/home/gridsan/hgundlach/game_project_rl/grpo_code_execution.py", line 183, in <module>
+    eval_config = EvalConfig(**eval_config_dict)
+TypeError: __init__() got an unexpected keyword argument 'enabled_initial'
+
+🏁 Training completed at Wed Jul 30 16:45:11 EDT 2025
+Exit code: 0
+
+📊 Post-training GPU memory:
+0, 32768
+
+📋 Copying important files to log directory...
+📈 Copying W&B logs...
+🧪 Copying evaluation results...
+
+📝 Creating job summary...
+✅ Job summary saved to: logs/job_1830308/job_summary.txt
+
+📁 All outputs saved to: logs/job_1830308
+🎉 SLURM job completed!

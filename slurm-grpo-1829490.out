@@ -1,0 +1,881 @@
+🚀 Starting GRPO Code Execution Training on Supercloud V100
+============================================================
+Job ID: 1829490
+Node: d-14-4-2
+GPU: GPU-37a2794e-195c-2b03-8fd2-d8739bd138f7
+Start time: Wed Jul 30 12:38:54 EDT 2025
+
+🔧 Setting up environment...
+ERROR: Unable to locate a modulefile for 'cuda/12.1'
+ERROR: Unable to locate a modulefile for 'python/3.9'
+🐍 Activating virtual environment...
+🌐 Setting offline mode for Supercloud...
+📁 Created job log directory: logs/job_1829490
+🎮 GPU Information:
+Tesla V100-PCIE-32GB, 32768, 32495
+
+💾 Memory Information:
+               total        used        free      shared  buff/cache   available
+Mem:           377Gi       3.7Gi       318Gi       2.0Mi        55Gi       371Gi
+Swap:             0B          0B          0B
+
+📦 Environment Information:
+Python 3.9.16
+datasets                          4.0.0
+fastrlock                         0.8.3
+peft                              0.16.0
+torch                             2.7.1
+torchaudio                        2.7.1
+torchvision                       0.22.1
+transformers                      4.54.0
+trl                               0.19.1
+vllm                              0.10.0
+
+🏋️ Starting GRPO training at Wed Jul 30 12:39:17 EDT 2025...
+Command: python grpo_code_execution.py --config configs/grpo_code_execution.yaml
+
+⚙️  Running in WANDB offline mode
+INFO 07-30 12:40:41 [__init__.py:235] Automatically detected platform cuda.
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+OpenSpiel exception: Unknown game 'connect_four_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'go_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'tic_tac_toe_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+OpenSpiel exception: Unknown game 'universal_poker_proxy'. Available games are:
+2048
+add_noise
+amazons
+backgammon
+bargaining
+battleship
+blackjack
+blotto
+breakthrough
+bridge
+bridge_uncontested_bidding
+cached_tree
+catch
+checkers
+chess
+cliff_walking
+clobber
+coin_game
+colored_trails
+connect_four
+coop_box_pushing
+coop_to_1p
+coordinated_mp
+crazy_eights
+cribbage
+cursor_go
+dark_chess
+dark_hex
+dark_hex_ir
+deep_sea
+dots_and_boxes
+dou_dizhu
+efg_game
+einstein_wurfelt_nicht
+euchre
+first_sealed_auction
+gin_rummy
+go
+goofspiel
+hanabi
+havannah
+hearts
+hex
+hive
+kriegspiel
+kuhn_poker
+laser_tag
+leduc_poker
+lewis_signaling
+liars_dice
+liars_dice_ir
+maedn
+mancala
+markov_soccer
+matching_pennies_3p
+matrix_bos
+matrix_brps
+matrix_cd
+matrix_coordination
+matrix_mp
+matrix_pd
+matrix_rps
+matrix_rpsw
+matrix_sh
+matrix_shapleys_game
+mfg_crowd_modelling
+mfg_crowd_modelling_2d
+mfg_dynamic_routing
+mfg_garnet
+misere
+mnk
+morpion_solitaire
+negotiation
+nfg_game
+nim
+nine_mens_morris
+normal_form_extensive_game
+oh_hell
+oshi_zumo
+othello
+oware
+pathfinding
+pentago
+phantom_go
+phantom_ttt
+phantom_ttt_ir
+pig
+quoridor
+rbc
+repeated_game
+restricted_nash_response
+sheriff
+skat
+solitaire
+spades
+start_at
+stones_and_gems
+tarok
+tic_tac_toe
+tiny_bridge_2p
+tiny_bridge_4p
+tiny_hanabi
+trade_comm
+turn_based_simultaneous_game
+twixt
+ultimate_tic_tac_toe
+universal_poker
+y
+zerosum
+🚀 Starting GRPO Code Execution Training...
+📋 Initializing components...
+📝 Loading configuration from: configs/grpo_code_execution.yaml
+🔧 Running platform detection...
+🔍 Detecting platform and GPU capabilities...
+🔍 Auto-detected: Supercloud platform
+🎮 GPU: V100, BF16 support: False
+🌐 Offline mode: True (detected Supercloud environment)
+✅ Set global offline mode for transformers and wandb
+📦 Loading utility modules...
+✓ Loaded environment from .env
+No pygame installed, ignoring import
+[kaggle_environments.envs.open_spiel.open_spiel] INFO: Successfully loaded OpenSpiel environments: 2.
+INFO:kaggle_environments.envs.open_spiel.open_spiel:Successfully loaded OpenSpiel environments: 2.
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    open_spiel_chess
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   open_spiel_chess
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    open_spiel_gin_rummy
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   open_spiel_gin_rummy
+[kaggle_environments.envs.open_spiel.open_spiel] INFO: OpenSpiel games skipped: 4.
+INFO:kaggle_environments.envs.open_spiel.open_spiel:OpenSpiel games skipped: 4.
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    connect_four
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   connect_four
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    go(board_size=9)
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   go(board_size=9)
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    tic_tac_toe
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   tic_tac_toe
+[kaggle_environments.envs.open_spiel.open_spiel] INFO:    universal_poker(betting=nolimit,bettingAbstraction=fullgame,blind=1 2,firstPlayer=2 1 1 1,numBoardCards=0 3 1 1,numHoleCards=2,numPlayers=2,numRanks=13,numRounds=4,numSuits=4,stack=400 400)
+INFO:kaggle_environments.envs.open_spiel.open_spiel:   universal_poker(betting=nolimit,bettingAbstraction=fullgame,blind=1 2,firstPlayer=2 1 1 1,numBoardCards=0 3 1 1,numHoleCards=2,numPlayers=2,numRanks=13,numRounds=4,numSuits=4,stack=400 400)
+wandb: WARNING Unable to verify login in offline mode.
+INFO:evaluation.configs.loader:Applied Supercloud V100 configuration adjustments
+INFO:evaluation.configs.loader:No YAML config file found, using defaults
+INFO:evaluation.mbpp.evaluator:Loaded 257 MBPP problems from ./evaluation/datasets/sanitized-mbpp.json
+INFO:accelerate.utils.modeling:We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+INFO:utils.vllm_client:🚀 Starting vLLM server: /home/gridsan/hgundlach/game_project_rl/venv/bin/python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-1.5B --host localhost --port 8000 --gpu-memory-utilization 0.85 --max-model-len 2048 --tensor-parallel-size 1 --max-num-batched-tokens 4096 --max-num-seqs 32 --swap-space 4 --dtype float16 --disable-log-requests --trust-remote-code
+INFO:utils.vllm_client:⏳ Waiting for vLLM server... (5/30s)
+INFO:utils.vllm_client:⏳ Waiting for vLLM server... (10/30s)
+INFO:utils.vllm_client:⏳ Waiting for vLLM server... (15/30s)
+INFO:utils.vllm_client:⏳ Waiting for vLLM server... (20/30s)
+INFO:utils.vllm_client:⏳ Waiting for vLLM server... (25/30s)
+ERROR:utils.vllm_client:❌ vLLM server failed to start
+INFO:utils.vllm_client:🛑 Stopping vLLM server...
+No label_names provided for model class `PeftModelForCausalLM`. Since `PeftModel` hides base models input arguments, if label_names is not given, label_names can't be set automatically within `Trainer`. Note that empty label_names list will be used instead.
+wandb: Tracking run with wandb version 0.21.0
+wandb: W&B syncing is set to `offline` in this directory. Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+INFO:evaluation.mbpp.evaluator:🚀 Running MBPP evaluation with vLLM at step 0 (initial) on 5 problems
+INFO:evaluation.mbpp.evaluator:Evaluating problem 1/5: task_id=113
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 1 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 2/5: task_id=61
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 2 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 3/5: task_id=274
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 3 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 4/5: task_id=257
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Evaluating problem 5/5: task_id=245
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:MBPP evaluation completed: 0/5 passed (0.000) in 0.0s
+wandb: WARNING The `run_name` is currently set to the same value as `TrainingArguments.output_dir`. If this was not intended, please specify a different run name by setting the `TrainingArguments.run_name` parameter.
+✓ Logged into W&B using environment variable
+🧪 Setting up MBPP evaluator...
+📊 Evaluation results will be saved to: logs/job_1829490
+
+==================================================
+📊 MBPP Evaluation Configuration
+==================================================
+Enabled: ✅
+Questions: 5
+Eval at start: ✅
+Eval at end: ✅
+Eval interval: none (only start/end)
+Dataset: auto-detect
+Results dir: logs/job_1829490
+Temperature: 0.2
+Max tokens: 256
+Timeout: 5s
+==================================================
+
+✅ MBPP evaluation enabled with 5 questions
+Created dataset: Dataset({
+    features: ['prompt'],
+    num_rows: 1000
+})
+🎯 Using preferred cached model: Qwen/Qwen2.5-1.5B (better memory efficiency)
+📥 Loading trainable model: Qwen/Qwen2.5-1.5B
+⏳ This may take 2-3 minutes depending on model size and storage speed...
+🔤 Loading tokenizer...
+🔧 Setting up LoRA configuration...
+🎯 Applying LoRA to model...
+trainable params: 18,464,768 || all params: 1,562,179,072 || trainable%: 1.1820
+None
+🚀 Initializing vLLM integration...
+⚠️ vLLM server failed to start, will use HuggingFace fallback
+Setting up GRPO training for code execution...
+🔧 Using V100 + 1.5B model settings (moderate memory reduction)
+💾 Checkpoints will be saved to: logs/job_1829490/checkpoints
+🔧 Set model config path to: ./model_cache/models--Qwen--Qwen2.5-1.5B/snapshots/8faed761d45a263340a0528343f099c05c9a4323
+🏋️ Initializing GRPO trainer...
+Starting GRPO training for code execution...
+✅ Initialized W&B run: None (Offline mode: True)
+🧪 Running initial MBPP evaluation...
+  0%|          | 0/2 [00:00<?, ?it/s]huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+ 50%|█████     | 1/2 [00:41<00:41, 41.32s/it]                                              50%|█████     | 1/2 [00:41<00:41, 41.32s/it]huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+huggingface/tokenizers: The current process just got forked, after parallelism has already been used. Disabling parallelism to avoid deadlocks...
+To disable this warning, you can either:
+	- Avoid using `tokenizers` before the fork if possible
+	- Explicitly set the environment variable TOKENIZERS_PARALLELISM=(true | false)
+100%|██████████| 2/2 [01:19<00:00, 39.32s/it]                                             100%|██████████| 2/2 [01:19<00:00, 39.32s/it]wandb: WARNING The get_url method is deprecated and will be removed in a future release. Please use `run.url` instead.
+wandb: WARNING URL not available in offline run
+/home/gridsan/hgundlach/game_project_rl/venv/lib/python3.9/site-packages/peft/utils/save_and_load.py:238: UserWarning: Could not find a config file in Qwen/Qwen2.5-1.5B - will assume that the vocabulary was not modified.
+  warnings.warn(
+                                             100%|██████████| 2/2 [01:20<00:00, 39.32s/it]100%|██████████| 2/2 [01:20<00:00, 40.12s/it]
+INFO:evaluation.mbpp.evaluator:🚀 Running MBPP evaluation with vLLM at step 2 (final) on 5 problems
+INFO:evaluation.mbpp.evaluator:Evaluating problem 1/5: task_id=130
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 1 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 2/5: task_id=105
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 2 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 3/5: task_id=97
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Problem 3 result: FAILED
+INFO:evaluation.mbpp.evaluator:Error: Empty code
+INFO:evaluation.mbpp.evaluator:Evaluating problem 4/5: task_id=435
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:Evaluating problem 5/5: task_id=65
+WARNING:utils.vllm_client:vLLM not available, falling back to HuggingFace
+INFO:evaluation.mbpp.evaluator:MBPP evaluation completed: 0/5 passed (0.000) in 0.0s
+wandb:                                                                                
+wandb: 
+wandb: Run history:
+wandb:                                  execution/avg_batch_reward █▁
+wandb:                                 execution/failed_executions ▁█
+wandb:                                      execution/success_rate █▁
+wandb:                             execution/successful_executions █▁
+wandb:                                     execution/syntax_errors ▁▁
+wandb:                                execution/timeout_executions ▁▁
+wandb:                                 execution/total_completions ▁▁
+wandb:        profiling/Time taken: GRPOTrainer._calculate_rewards █▁
+wandb:      profiling/Time taken: GRPOTrainer._get_per_token_logps █▁▁▁
+wandb:           profiling/Time taken: GRPOTrainer._prepare_inputs █▁█▁
+wandb:              profiling/Time taken: GRPOTrainer.compute_loss █▁▁▁
+wandb: profiling/Time taken: GRPOTrainer.execution_reward_function ▁█
+wandb:                                   train/clip_ratio/high_max ▁▁
+wandb:                                  train/clip_ratio/high_mean ▁▁
+wandb:                                   train/clip_ratio/low_mean ▁▁
+wandb:                                    train/clip_ratio/low_min ▁▁
+wandb:                                train/clip_ratio/region_mean ▁▁
+wandb:                             train/completions/clipped_ratio ▁█
+wandb:                                train/completions/max_length ▁▁
+wandb:                     train/completions/max_terminated_length ▁█
+wandb:                               train/completions/mean_length ▁█
+wandb:                    train/completions/mean_terminated_length █▁
+wandb:                                train/completions/min_length █▁
+wandb:                     train/completions/min_terminated_length █▁
+wandb:                                                 train/epoch ▁██
+wandb:                                  train/frac_reward_zero_std ▁▁
+wandb:                                           train/global_step ▁▁▁▁▁▁▁▁▁▅▅▅▅▅▅▅▅▅▅██
+wandb:                                             train/grad_norm ▁█
+wandb:                                         train/learning_rate █▁
+wandb:                                                  train/loss ▁█
+wandb:                                            train/num_tokens ▁█
+wandb:                                                train/reward █▁
+wandb:                                            train/reward_std ▁█
+wandb:                train/rewards/execution_reward_function/mean █▁
+wandb:                 train/rewards/execution_reward_function/std ▁█
+wandb:                                             vllm/batch_size ▁▁
+wandb: 
+wandb: Run summary:
+wandb:                                  execution/avg_batch_reward 0.3125
+wandb:                                 execution/failed_executions 2
+wandb:                                      execution/success_rate 0.75
+wandb:                             execution/successful_executions 6
+wandb:                                     execution/syntax_errors 0
+wandb:                                execution/timeout_executions 0
+wandb:                                 execution/total_completions 8
+wandb:        profiling/Time taken: GRPOTrainer._calculate_rewards 0.30887
+wandb:      profiling/Time taken: GRPOTrainer._get_per_token_logps 0.11941
+wandb:           profiling/Time taken: GRPOTrainer._prepare_inputs 1e-05
+wandb:              profiling/Time taken: GRPOTrainer.compute_loss 0.19926
+wandb: profiling/Time taken: GRPOTrainer.execution_reward_function 0.30835
+wandb:                                                  total_flos 0
+wandb:                                   train/clip_ratio/high_max 0
+wandb:                                  train/clip_ratio/high_mean 0
+wandb:                                   train/clip_ratio/low_mean 0
+wandb:                                    train/clip_ratio/low_min 0
+wandb:                                train/clip_ratio/region_mean 0
+wandb:                             train/completions/clipped_ratio 0.25
+wandb:                                train/completions/max_length 384
+wandb:                     train/completions/max_terminated_length 371
+wandb:                               train/completions/mean_length 221.875
+wandb:                    train/completions/mean_terminated_length 167.83334
+wandb:                                train/completions/min_length 25
+wandb:                     train/completions/min_terminated_length 25
+wandb:                                                 train/epoch 0.008
+wandb:                                  train/frac_reward_zero_std 0.5
+wandb:                                           train/global_step 2
+wandb:                                             train/grad_norm 0.18555
+wandb:                                         train/learning_rate 1e-05
+wandb:                                                  train/loss 0.1275
+wandb:                                            train/num_tokens 4800
+wandb:                                                train/reward 0.3125
+wandb:                                            train/reward_std 0.61872
+wandb:                train/rewards/execution_reward_function/mean 0.3125
+wandb:                 train/rewards/execution_reward_function/std 0.84251
+wandb:                                                  train_loss 0.04439
+wandb:                                               train_runtime 80.2538
+wandb:                                    train_samples_per_second 0.199
+wandb:                                      train_steps_per_second 0.025
+wandb:                                             vllm/batch_size 8
+wandb:                                   vllm/used_for_completions True
+wandb: 
+wandb: You can sync this run to the cloud by running:
+wandb: wandb sync /home/gridsan/hgundlach/game_project_rl/wandb/offline-run-20250730_124144-s50ijs3p
+wandb: Find logs at: ./wandb/offline-run-20250730_124144-s50ijs3p/logs
+🚀 Using vLLM for 8 completions
+==================================================
+Completion 1:
+Code: def get_smallest_number(numbers):
+    """
+    Return the smallest number among the given numbers.
+    
+    The function should work for any list of positive integers.
+    
+    Example usage:
+    >>> g...
+Success: True
+Output: 
+Error: 
+Execution time: 0.04s
+Reward: 0.5
+==================================================
+Completion 1/8: ✅ reward=0.5, time=0.04s
+==================================================
+Completion 2:
+Code: def count_char_occurrences(string, char):
+    char_count = 0
+    for c in string:
+        if c == char:
+            char_count += 1
+    return char_count
+
+input_string = input("Enter a string: ")
+char...
+Success: False
+Output: Enter a string:
+Error: Traceback (most recent call last):
+  File "/state/partition1/slurm_tmp/1829490.4294967291.0/tmp6fmwj
+Execution time: 0.04s
+Reward: -1.0
+==================================================
+Completion 2/8: ❌ reward=-1.0, time=0.04s
+==================================================
+Completion 3:
+Code: def print_max(a, b):
+    if a > b:
+        print ("The value of a is greater than b")
+    elif a == b:
+        print("a and b are equal")
+    else:
+        print("The value of b is greater than a")...
+Success: True
+Output: 
+Error: 
+Execution time: 0.04s
+Reward: 0.5
+==================================================
+Completion 3/8: ✅ reward=0.5, time=0.04s
+Completion 4/8: ✅ reward=1.0, time=0.04s
+Completion 5/8: ✅ reward=1.0, time=0.04s
+Completion 6/8: ✅ reward=1.0, time=0.03s
+Completion 7/8: ✅ reward=0.5, time=0.03s
+Completion 8/8: ✅ reward=0.5, time=0.04s
+{'loss': -0.0388, 'grad_norm': 0.15178720653057098, 'learning_rate': 2e-05, 'num_tokens': 2313.0, 'completions/mean_length': 200.125, 'completions/min_length': 93.0, 'completions/max_length': 384.0, 'completions/clipped_ratio': 0.125, 'completions/mean_terminated_length': 173.85714721679688, 'completions/min_terminated_length': 93.0, 'completions/max_terminated_length': 287.0, 'rewards/execution_reward_function/mean': 0.5, 'rewards/execution_reward_function/std': 0.6546536684036255, 'reward': 0.5, 'reward_std': 0.3535533845424652, 'frac_reward_zero_std': 0.5, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'epoch': 0.0}
+🚀 Using vLLM for 8 completions
+==================================================
+Completion 1:
+Code: # Your code here...
+Success: True
+Output: 
+Error: 
+Execution time: 0.04s
+Reward: 0.5
+==================================================
+Completion 1/8: ✅ reward=0.5, time=0.04s
+==================================================
+Completion 2:
+Code: # Your code here
+
+print(x * y)...
+Success: False
+Output: 
+Error: Traceback (most recent call last):
+  File "/state/partition1/slurm_tmp/1829490.4294967291.0/tmp7jjmz
+Execution time: 0.04s
+Reward: -1.0
+==================================================
+Completion 2/8: ❌ reward=-1.0, time=0.04s
+==================================================
+Completion 3:
+Code: # Your code here...
+Success: True
+Output: 
+Error: 
+Execution time: 0.04s
+Reward: 0.5
+==================================================
+Completion 3/8: ✅ reward=0.5, time=0.04s
+Completion 4/8: ✅ reward=0.5, time=0.04s
+Completion 5/8: ✅ reward=1.0, time=0.04s
+Completion 6/8: ✅ reward=1.0, time=0.04s
+Completion 7/8: ❌ reward=-1.0, time=0.04s
+Completion 8/8: ✅ reward=1.0, time=0.04s
+{'loss': 0.1275, 'grad_norm': 0.1855509728193283, 'learning_rate': 1e-05, 'num_tokens': 4800.0, 'completions/mean_length': 221.875, 'completions/min_length': 25.0, 'completions/max_length': 384.0, 'completions/clipped_ratio': 0.25, 'completions/mean_terminated_length': 167.83334350585938, 'completions/min_terminated_length': 25.0, 'completions/max_terminated_length': 371.0, 'rewards/execution_reward_function/mean': 0.3125, 'rewards/execution_reward_function/std': 0.8425090312957764, 'reward': 0.3125, 'reward_std': 0.6187183856964111, 'frac_reward_zero_std': 0.5, 'clip_ratio/low_mean': 0.0, 'clip_ratio/low_min': 0.0, 'clip_ratio/high_mean': 0.0, 'clip_ratio/high_max': 0.0, 'clip_ratio/region_mean': 0.0, 'epoch': 0.01}
+{'train_runtime': 80.2538, 'train_samples_per_second': 0.199, 'train_steps_per_second': 0.025, 'train_loss': 0.04438808932900429, 'epoch': 0.01}
+🧪 Running final MBPP evaluation...
+Code execution training completed!
+🧹 Cleaning up vLLM server...
+✅ Training completed (W&B run finished)
+
+🏁 Training completed at Wed Jul 30 12:43:09 EDT 2025
+Exit code: 0
+
+📊 Post-training GPU memory:
+0, 32768
+
+📋 Copying important files to log directory...
+📈 Copying W&B logs...
+🧪 Copying evaluation results...
+
+📝 Creating job summary...
+✅ Job summary saved to: logs/job_1829490/job_summary.txt
+
+📁 All outputs saved to: logs/job_1829490
+🎉 SLURM job completed!

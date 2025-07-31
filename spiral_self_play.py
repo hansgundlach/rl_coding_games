@@ -694,10 +694,11 @@ print(
 
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Create human-readable timestamp: Jul31_2025_14h30m
+    timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
     wandb.init(project=project_name)
-    print(f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})")
+    print(f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})")
 
 # Run initial MBPP evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
