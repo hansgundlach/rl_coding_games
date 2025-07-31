@@ -170,7 +170,7 @@ else:
 print("🧪 Setting up MBPP evaluator...")
 
 # Create evaluation config from main config
-eval_config_dict = config.get("evaluation", {})
+eval_config_dict = config.get("evaluation", {}).copy()
 
 # Remove keys not expected by EvalConfig constructor
 eval_config_dict.pop("enabled_initial", None)
@@ -188,13 +188,19 @@ print("=" * 50)
 print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
 if eval_config.enabled:
     print(f"Questions: {eval_config.num_questions}")
-    print(f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}")
-    print(f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}")
+    print(
+        f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}"
+    )
+    print(
+        f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}"
+    )
     print(
         f"Interval eval: {'✅' if config['evaluation'].get('enabled_interval', False) else '❌'}"
     )
     if config["evaluation"].get("enabled_interval", False):
-        print(f"Eval every: {config['evaluation'].get('eval_interval_steps', 'N/A')} steps")
+        print(
+            f"Eval every: {config['evaluation'].get('eval_interval_steps', 'N/A')} steps"
+        )
     print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
     print(f"Results dir: {eval_config.results_dir}")
     print(f"Temperature: {eval_config.temperature}")
@@ -698,7 +704,9 @@ if WANDB_ENABLED:
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
     wandb.init(project=project_name)
-    print(f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})")
+    print(
+        f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
+    )
 
 # Run initial MBPP evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
