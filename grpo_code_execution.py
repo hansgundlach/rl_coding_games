@@ -629,9 +629,9 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
     print(f"DEBUG: Initial MBPP Results: {initial_results}")
     print(f"DEBUG: WANDB_ENABLED: {WANDB_ENABLED}")
     print(f"DEBUG: wandb.run is active: {bool(wandb.run)}")
-    print(f"DEBUG: initial_results['enabled']: {initial_results.get('enabled', False)}")
+    print(f"DEBUG: 'pass_rate' in initial_results: {'pass_rate' in initial_results}")
     print(
-        f"DEBUG: Condition for logging initial MBPP: {WANDB_ENABLED and bool(wandb.run) and initial_results.get('enabled', False)}"
+        f"DEBUG: Condition for logging initial MBPP: {WANDB_ENABLED and bool(wandb.run) and 'pass_rate' in initial_results}"
     )
     # --- END DEBUGGING ---
 
@@ -663,9 +663,9 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.should_eva
     print(f"DEBUG: Final MBPP Results: {final_results}")
     print(f"DEBUG: WANDB_ENABLED: {WANDB_ENABLED}")
     print(f"DEBUG: wandb.run is active: {bool(wandb.run)}")
-    print(f"DEBUG: final_results['enabled']: {final_results.get('enabled', False)}")
+    print(f"DEBUG: 'pass_rate' in final_results: {'pass_rate' in final_results}")
     print(
-        f"DEBUG: Condition for logging final MBPP: {WANDB_ENABLED and bool(wandb.run) and final_results.get('enabled', False)}"
+        f"DEBUG: Condition for logging final MBPP: {WANDB_ENABLED and bool(wandb.run) and 'pass_rate' in final_results}"
     )
     # --- END DEBUGGING ---
 
