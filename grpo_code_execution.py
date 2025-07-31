@@ -617,7 +617,7 @@ if WANDB_ENABLED:
     )  # Adjusted print message
 
 # Run initial evaluation if enabled
-if config["evaluation"]["enabled_initial"] and mbpp_evaluator.should_evaluate(
+if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_evaluate(
     is_start=True
 ):
     print("🧪 Running initial MBPP evaluation...")
@@ -651,7 +651,7 @@ if config["evaluation"]["enabled_initial"] and mbpp_evaluator.should_evaluate(
 trainer.train()
 
 # Run final evaluation if enabled
-if config["evaluation"]["enabled_final"] and mbpp_evaluator.should_evaluate(
+if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.should_evaluate(
     is_end=True
 ):
     print("🧪 Running final MBPP evaluation...")
