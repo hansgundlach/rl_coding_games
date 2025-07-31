@@ -171,7 +171,7 @@ else:
 print("🧪 Setting up MBPP evaluator...")
 
 # Create evaluation config from main config
-eval_config_dict = config.get("evaluation", {})
+eval_config_dict = config.get("evaluation", {}).copy()
 
 # Remove keys not expected by EvalConfig constructor
 # These are used for controlling when evaluation runs, not how it's configured
@@ -195,8 +195,12 @@ print("=" * 50)
 print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
 if eval_config.enabled:
     print(f"Questions: {eval_config.num_questions}")
-    print(f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}")
-    print(f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}")
+    print(
+        f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}"
+    )
+    print(
+        f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}"
+    )
     print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
     print(f"Results dir: {eval_config.results_dir}")
     print(f"Temperature: {eval_config.temperature}")
@@ -651,6 +655,7 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
 # Add interval evaluation callback
 from transformers import TrainerCallback
 
+
 class IntervalEvaluationCallback(TrainerCallback):
     def __init__(self, evaluator, model, tokenizer, config, wandb_enabled):
         self.evaluator = evaluator
@@ -659,32 +664,43 @@ class IntervalEvaluationCallback(TrainerCallback):
         self.config = config
         self.wandb_enabled = wandb_enabled
         self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
-    
+
     def on_step_end(self, args, state, control, **kwargs):
         # DEBUG: Always print to see if callback is being called
         print(f"🔍 CALLBACK DEBUG: on_step_end called at step {state.global_step}")
-        print(f"🔍 CALLBACK DEBUG: eval_interval={self.eval_interval}, evaluator.enabled={self.evaluator.config.enabled}")
-        print(f"🔍 CALLBACK DEBUG: condition check: step > 0: {state.global_step > 0}, step % interval == 0: {state.global_step % self.eval_interval == 0 if self.eval_interval else 'N/A'}")
-        
+        print(
+            f"🔍 CALLBACK DEBUG: eval_interval={self.eval_interval}, evaluator.enabled={self.evaluator.config.enabled}"
+        )
+        print(
+            f"🔍 CALLBACK DEBUG: condition check: step > 0: {state.global_step > 0}, step % interval == 0: {state.global_step % self.eval_interval == 0 if self.eval_interval else 'N/A'}"
+        )
+
         # Run interval evaluation if enabled and it's time
-        if (self.eval_interval and 
-            self.evaluator.config.enabled and
-            state.global_step > 0 and  # Skip step 0 (initial eval already done)
-            state.global_step % self.eval_interval == 0):
-            
+        if (
+            self.eval_interval
+            and self.evaluator.config.enabled
+            and state.global_step > 0  # Skip step 0 (initial eval already done)
+            and state.global_step % self.eval_interval == 0
+        ):
+
             print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
             interval_results = self.evaluator.evaluate_model(
                 self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
-            
-            if (self.wandb_enabled and wandb.run and "pass_rate" in interval_results):
-                wandb.log({
-                    "mbpp_eval/pass_rate": interval_results["pass_rate"],
-                    "mbpp_eval/problems_passed": interval_results["problems_passed"],
-                    "mbpp_eval/total_problems": interval_results["total_problems"],
-                    "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
-                    "step": state.global_step
-                })
+
+            if self.wandb_enabled and wandb.run and "pass_rate" in interval_results:
+                wandb.log(
+                    {
+                        "mbpp_eval/pass_rate": interval_results["pass_rate"],
+                        "mbpp_eval/problems_passed": interval_results[
+                            "problems_passed"
+                        ],
+                        "mbpp_eval/total_problems": interval_results["total_problems"],
+                        "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
+                        "step": state.global_step,
+                    }
+                )
+
 
 # Add the callback to trainer
 interval_callback = IntervalEvaluationCallback(
