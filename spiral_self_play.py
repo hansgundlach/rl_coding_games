@@ -188,13 +188,13 @@ print("=" * 50)
 print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
 if eval_config.enabled:
     print(f"Questions: {eval_config.num_questions}")
-    print(f"Initial eval: {'✅' if config['evaluation']['enabled_initial'] else '❌'}")
-    print(f"Final eval: {'✅' if config['evaluation']['enabled_final'] else '❌'}")
+    print(f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}")
+    print(f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}")
     print(
-        f"Interval eval: {'✅' if config['evaluation']['enabled_interval'] else '❌'}"
+        f"Interval eval: {'✅' if config['evaluation'].get('enabled_interval', False) else '❌'}"
     )
-    if config["evaluation"]["enabled_interval"]:
-        print(f"Eval every: {config['evaluation']['eval_interval_steps']} steps")
+    if config["evaluation"].get("enabled_interval", False):
+        print(f"Eval every: {config['evaluation'].get('eval_interval_steps', 'N/A')} steps")
     print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
     print(f"Results dir: {eval_config.results_dir}")
     print(f"Temperature: {eval_config.temperature}")
@@ -700,7 +700,7 @@ if WANDB_ENABLED:
     print(f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})")
 
 # Run initial MBPP evaluation if enabled
-if config["evaluation"]["enabled_initial"] and mbpp_evaluator.config.enabled:
+if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
     print("🧪 Running initial MBPP evaluation...")
     initial_results = mbpp_evaluator.evaluate_model(
         model, tokenizer, step=0, phase="initial"
@@ -788,7 +788,7 @@ for step in range(num_steps):
 
     # Run interval MBPP evaluation if enabled
     if (
-        config["evaluation"]["enabled_interval"]
+        config["evaluation"].get("enabled_interval", False)
         and mbpp_evaluator.config.enabled
         and (step + 1) % config["evaluation"]["eval_interval_steps"] == 0
     ):
@@ -831,7 +831,7 @@ for step in range(num_steps):
 print("🏁 SPIRAL self-play training completed!")
 
 # Run final MBPP evaluation if enabled
-if config["evaluation"]["enabled_final"] and mbpp_evaluator.config.enabled:
+if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.config.enabled:
     print("🧪 Running final MBPP evaluation...")
     final_results = mbpp_evaluator.evaluate_model(
         model, tokenizer, step=num_steps, phase="final"
