@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SPIRAL Self-Play Training - Simplified Implementation
+SPIRAL Self-Play Training - Simplified Implementation with MBPP Evaluation
 Based on "SPIRAL: Self-Play on Zero-Sum Games Incentivizes Reasoning via Multi-Agent Multi-Turn Reinforcement Learning"
 
 Key SPIRAL concepts implemented:
@@ -8,6 +8,7 @@ Key SPIRAL concepts implemented:
 - Role-conditioned advantage estimation (RAE)
 - Turn-based zero-sum games
 - Multi-turn competitive dynamics
+- MBPP evaluation for code generation assessment
 """
 
 import torch
@@ -26,10 +27,35 @@ import numpy as np
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 import json
+import yaml
+import argparse
+
+
+print("🚀 Starting SPIRAL Self-Play Training with MBPP Evaluation...")
+print("📋 Initializing components...")
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description="SPIRAL Self-Play Training")
+parser.add_argument(
+    "--config",
+    type=str,
+    default="configs/spiral_self_play.yaml",
+    help="Path to configuration file",
+)
+args = parser.parse_args()
+
+# Load configuration
+print(f"📝 Loading configuration from: {args.config}")
+with open(args.config, "r") as f:
+    config = yaml.safe_load(f)
+
+# Extract config values for easy access
+WANDB_ENABLED = config["wandb"]["enabled"]
 
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
+    print("🔍 Detecting platform and GPU capabilities...")
     if not torch.cuda.is_available():
         return {
             "supports_bf16": False,
@@ -91,6 +117,7 @@ def detect_platform_and_gpu():
 
 
 # Auto-detect platform and capabilities
+print("🔧 Running platform detection...")
 platform_info = detect_platform_and_gpu()
 print(f"🔍 Auto-detected: {platform_info['platform']} platform")
 print(
@@ -103,28 +130,88 @@ print(
 # Extract values for easier use
 offline_mode = platform_info["offline_mode"]
 
-# Set global environment variables for transformers library
-if offline_mode:
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    os.environ["HF_DATASETS_OFFLINE"] = "1"
+# Set global environment variables for transformers library and W&B
+if WANDB_ENABLED:  # Check if W&B is enabled by user
+    if offline_mode:
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+        os.environ["WANDB_MODE"] = "offline"  # Changed from "disabled" to "offline"
+        print("✅ Set global offline mode for transformers and wandb")
+    else:
+        # For online mode, ensure offline flags are not set
+        os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        os.environ.pop("HF_DATASETS_OFFLINE", None)
+        os.environ.pop("WANDB_MODE", None)
+else:  # If WANDB_ENABLED is False, explicitly disable W&B
     os.environ["WANDB_MODE"] = "disabled"
-    print("✅ Set global offline mode for transformers and wandb")
+    print("🚫 W&B logging explicitly disabled by user configuration.")
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
+from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 
-# Initialize wandb with API key from environment (skip if offline)
-if not offline_mode:
+# Initialize wandb with API key from environment (skip if W&B is not enabled)
+if WANDB_ENABLED:  # Only try to log in if W&B is enabled
     wandb_key = get_api_key("wandb", required=False)
     if wandb_key:
         wandb.login(key=wandb_key)
         print("✓ Logged into W&B using environment variable")
     else:
-        print("⚠️ No W&B API key found, continuing without logging")
+        print(
+            "⚠️ No W&B API key found, continuing with W&B logging (if online) or local saves (if offline)."
+        )
 else:
-    print("🚫 Skipping W&B login (offline mode)")
+    print("🚫 Skipping W&B login (W&B is disabled by user).")
+
+# Initialize MBPP evaluator with consolidated config
+print("🧪 Setting up MBPP evaluator...")
+
+# Create evaluation config from main config
+eval_config_dict = config.get("evaluation", {})
+
+# Remove keys not expected by EvalConfig constructor
+eval_config_dict.pop("enabled_initial", None)
+eval_config_dict.pop("enabled_final", None)
+eval_config_dict.pop("enabled_interval", None)
+eval_config_dict.pop("eval_interval_steps", None)
+
+# Create EvalConfig object from consolidated config
+eval_config = EvalConfig(**eval_config_dict)
+
+# Print evaluation config summary
+print("\n" + "=" * 50)
+print("🧪 MBPP Evaluation Configuration")
+print("=" * 50)
+print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
+if eval_config.enabled:
+    print(f"Questions: {eval_config.num_questions}")
+    print(f"Initial eval: {'✅' if config['evaluation']['enabled_initial'] else '❌'}")
+    print(f"Final eval: {'✅' if config['evaluation']['enabled_final'] else '❌'}")
+    print(
+        f"Interval eval: {'✅' if config['evaluation']['enabled_interval'] else '❌'}"
+    )
+    if config["evaluation"]["enabled_interval"]:
+        print(f"Eval every: {config['evaluation']['eval_interval_steps']} steps")
+    print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
+    print(f"Results dir: {eval_config.results_dir}")
+    print(f"Temperature: {eval_config.temperature}")
+    print(f"Max tokens: {eval_config.max_new_tokens}")
+    print(f"Timeout: {eval_config.timeout_seconds}s")
+print("=" * 50 + "\n")
+
+mbpp_evaluator = MBPPEvaluator(eval_config)
+
+if not mbpp_evaluator.config.enabled:
+    print("⚠️ MBPP evaluation disabled - dataset not found")
+    print("💡 To enable evaluation, download MBPP dataset first:")
+    print("   python -m evaluation.mbpp.evaluator")
+else:
+    print(
+        f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
+    )
 
 
 @dataclass
@@ -517,7 +604,7 @@ def compute_policy_gradient_loss(
 
 
 # Set up model cache directory
-cache_dir = "./model_cache"
+cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
 # Load model following existing pattern
@@ -548,12 +635,12 @@ if offline_mode:
             f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)"
         )
     else:
-        model_id = "Qwen/Qwen2.5-1.5B"
+        model_id = config["model"]["id"]
         print(f"⚠️  No cached models found, attempting: {model_id}")
 else:
-    model_id = "Qwen/Qwen2.5-1.5B"
+    model_id = config["model"]["id"]
 
-print(f"Loading model for SPIRAL self-play: {model_id}")
+print(f"📥 Loading model for SPIRAL self-play: {model_id}")
 
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -571,12 +658,14 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # Add LoRA for efficient training
+print("🔧 Setting up LoRA configuration...")
 lora_config = LoraConfig(
-    task_type="CAUSAL_LM",
-    r=16,
-    lora_alpha=32,
-    target_modules="all-linear",
+    task_type=config["lora"]["task_type"],
+    r=config["lora"]["r"],
+    lora_alpha=config["lora"]["lora_alpha"],
+    target_modules=config["lora"]["target_modules"],
 )
+print("🎯 Applying LoRA to model...")
 model = get_peft_model(model, lora_config)
 print(model.print_trainable_parameters())
 
@@ -585,29 +674,47 @@ device = next(model.parameters()).device
 print(f"Model device: {device}")
 
 # Initialize SPIRAL components
-rae = RoleConditionedAdvantageEstimation(alpha=0.95)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
+rae = RoleConditionedAdvantageEstimation(alpha=config["training"]["rae_alpha"])
+optimizer = torch.optim.Adam(model.parameters(), lr=config["training"]["learning_rate"])
 
 # Training parameters following SPIRAL paper concepts
-num_steps = 2  # Changed from 200 to 2 for testing
+num_steps = config["training"]["num_steps"]
 
 # Adaptive batch size based on GPU memory
 if platform_info["gpu_type"] == "V100":
-    games_per_step = 2  # Very small for V100 memory constraints
-    print("🔧 Using V100 memory-optimized settings: 2 games per step")
+    games_per_step = config["training"]["games_per_step_v100"]
+    print("🔧 Using V100 memory-optimized settings: {games_per_step} games per step")
 else:
-    games_per_step = 4  # Conservative for other GPUs
-    print("🔧 Using conservative memory settings: 4 games per step")
+    games_per_step = config["training"]["games_per_step_other"]
+    print("🔧 Using conservative memory settings: {games_per_step} games per step")
+
 print(
     f"🎮 Starting SPIRAL self-play training: {num_steps} steps, {games_per_step} games per step"
 )
 
-# Initialize wandb run (only if not in offline mode)
-if not offline_mode:
+# Initialize wandb run (only if W&B is enabled by user)
+if WANDB_ENABLED:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    wandb.init(project=f"spiral-self-play-{timestamp}")
-else:
-    print("🚫 Skipping wandb initialization (offline mode)")
+    project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
+    wandb.init(project=project_name)
+    print(f"✅ Initialized W&B run: {wandb.run.name} (Offline mode: {offline_mode})")
+
+# Run initial MBPP evaluation if enabled
+if config["evaluation"]["enabled_initial"] and mbpp_evaluator.config.enabled:
+    print("🧪 Running initial MBPP evaluation...")
+    initial_results = mbpp_evaluator.evaluate_model(
+        model, tokenizer, step=0, phase="initial"
+    )
+
+    if WANDB_ENABLED and wandb.run and initial_results.get("enabled", False):
+        wandb.log(
+            {
+                "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
+                "mbpp_eval/initial_problems_passed": initial_results["problems_passed"],
+                "mbpp_eval/initial_total_problems": initial_results["total_problems"],
+                "mbpp_eval/initial_eval_time": initial_results["eval_time_seconds"],
+            }
+        )
 
 # Training loop
 for step in range(num_steps):
@@ -646,7 +753,9 @@ for step in range(num_steps):
     # Update model
     optimizer.zero_grad()
     loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    torch.nn.utils.clip_grad_norm_(
+        model.parameters(), max_norm=config["training"]["gradient_clip_norm"]
+    )
     optimizer.step()
 
     # Logging
@@ -674,12 +783,41 @@ for step in range(num_steps):
         f"📈 Baselines - P0: {rae_stats['baseline_player_0']:.3f}, P1: {rae_stats['baseline_player_1']:.3f}"
     )
 
-    if wandb.run:
+    if WANDB_ENABLED and wandb.run:
         wandb.log(stats)
 
+    # Run interval MBPP evaluation if enabled
+    if (
+        config["evaluation"]["enabled_interval"]
+        and mbpp_evaluator.config.enabled
+        and (step + 1) % config["evaluation"]["eval_interval_steps"] == 0
+    ):
+        print(f"🧪 Running interval MBPP evaluation at step {step + 1}...")
+        interval_results = mbpp_evaluator.evaluate_model(
+            model, tokenizer, step=step + 1, phase="interval"
+        )
+
+        if WANDB_ENABLED and wandb.run and interval_results.get("enabled", False):
+            wandb.log(
+                {
+                    f"mbpp_eval/step_{step + 1}_pass_rate": interval_results[
+                        "pass_rate"
+                    ],
+                    f"mbpp_eval/step_{step + 1}_problems_passed": interval_results[
+                        "problems_passed"
+                    ],
+                    f"mbpp_eval/step_{step + 1}_total_problems": interval_results[
+                        "total_problems"
+                    ],
+                    f"mbpp_eval/step_{step + 1}_eval_time": interval_results[
+                        "eval_time_seconds"
+                    ],
+                }
+            )
+
     # Save checkpoint periodically
-    if (step + 1) % 50 == 0:
-        checkpoint_dir = f"checkpoints/spiral_self_play/step_{step + 1}"
+    if (step + 1) % config["training"]["save_interval"] == 0:
+        checkpoint_dir = f"{config['training']['checkpoint_dir']}/step_{step + 1}"
         os.makedirs(checkpoint_dir, exist_ok=True)
         model.save_pretrained(checkpoint_dir)
         tokenizer.save_pretrained(checkpoint_dir)
@@ -692,8 +830,25 @@ for step in range(num_steps):
 
 print("🏁 SPIRAL self-play training completed!")
 
+# Run final MBPP evaluation if enabled
+if config["evaluation"]["enabled_final"] and mbpp_evaluator.config.enabled:
+    print("🧪 Running final MBPP evaluation...")
+    final_results = mbpp_evaluator.evaluate_model(
+        model, tokenizer, step=num_steps, phase="final"
+    )
+
+    if WANDB_ENABLED and wandb.run and final_results.get("enabled", False):
+        wandb.log(
+            {
+                "mbpp_eval/final_pass_rate": final_results["pass_rate"],
+                "mbpp_eval/final_problems_passed": final_results["problems_passed"],
+                "mbpp_eval/final_total_problems": final_results["total_problems"],
+                "mbpp_eval/final_eval_time": final_results["eval_time_seconds"],
+            }
+        )
+
 # Final checkpoint
-final_checkpoint_dir = "checkpoints/spiral_self_play/final"
+final_checkpoint_dir = f"{config['training']['checkpoint_dir']}/final"
 os.makedirs(final_checkpoint_dir, exist_ok=True)
 model.save_pretrained(final_checkpoint_dir)
 tokenizer.save_pretrained(final_checkpoint_dir)
@@ -703,7 +858,8 @@ with open(f"{final_checkpoint_dir}/rae_state.json", "w") as f:
 
 print(f"💾 Saved final checkpoint")
 
-if not offline_mode:
+if WANDB_ENABLED and wandb.run:
     wandb.finish()
+    print("✅ Training completed (W&B run finished)")
 else:
-    print("✅ Training completed (offline mode - no wandb to finish)")
+    print("✅ Training completed (W&B logging was disabled)")

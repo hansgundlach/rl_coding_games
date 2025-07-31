@@ -1,0 +1,63 @@
+# configs/spiral_self_play.yaml
+
+# --- Model Settings ---
+model:
+  id: "Qwen/Qwen2.5-1.5B"  # Base model to use
+  cache_dir: "./model_cache"
+
+# --- LoRA Configuration ---
+lora:
+  task_type: "CAUSAL_LM"
+  r: 16
+  lora_alpha: 32
+  target_modules: "all-linear"
+
+# --- SPIRAL Training Parameters ---
+training:
+  num_steps: 2  # Number of training steps
+  learning_rate: 0.000001  # 1e-6
+  
+  # Game parameters
+  games_per_step_v100: 2    # Games per step for V100
+  games_per_step_other: 4   # Games per step for other GPUs
+  
+  # RAE (Role-conditioned Advantage Estimation)
+  rae_alpha: 0.95
+  
+  # Optimization
+  gradient_clip_norm: 1.0
+  
+  # Checkpointing
+  save_interval: 50  # Save checkpoint every N steps
+  checkpoint_dir: "checkpoints/spiral_self_play"
+
+# --- Weights & Biases Logging Settings ---
+wandb:
+  enabled: True
+  project_name_prefix: "spiral-self-play"
+
+# --- Evaluation Settings (MBPP) ---
+evaluation:
+  # Evaluation Control
+  enabled: True
+  enabled_initial: True   # Run evaluation before training
+  enabled_final: True     # Run evaluation after training
+  enabled_interval: True  # Run evaluation during training
+  eval_interval_steps: 1  # Evaluate every N steps (for quick testing)
+  
+  # MBPP Configuration
+  num_questions: 5        # Small number for quick evaluation
+  timeout_seconds: 5      # Short timeout for V100 compatibility
+  max_new_tokens: 256     # Conservative for memory
+  temperature: 0.2
+  do_sample: True
+  
+  # Dataset Configuration  
+  dataset_path: null      # Auto-detect
+  use_sanitized: True
+  test_split: "test"
+  
+  # Output Settings
+  save_results: True
+  results_dir: "./eval_results/spiral_self_play"
+  verbose: True
