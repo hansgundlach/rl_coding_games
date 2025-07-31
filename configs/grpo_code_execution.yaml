@@ -40,7 +40,7 @@ training_args:
 
   remove_unused_columns: False
   logging_steps: 1
-  max_steps: 90  # Set to 2 for quick pipeline testing
+  max_steps: 5  # Set to 2 for quick pipeline testing
 
 # --- Weights & Biases Logging Settings ---
 wandb:
@@ -54,7 +54,7 @@ evaluation:
   enabled_initial: True            # Run initial MBPP evaluation
   enabled_final: True              # Run final MBPP evaluation
   num_questions: 5                # Number of MBPP problems to evaluate
-  eval_interval_steps: 20        # Run evaluation every N steps (null = no intermediate evals)
+  eval_interval_steps: 2        # Run evaluation every N steps (null = no intermediate evals)
   
   # Dataset Configuration
   dataset_path: null               # Path to MBPP dataset (null = auto-detect)
