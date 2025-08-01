@@ -715,7 +715,7 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
         model, tokenizer, step=0, phase="initial"
     )
 
-    if WANDB_ENABLED and wandb.run and initial_results.get("enabled", False):
+    if WANDB_ENABLED and wandb.run and "pass_rate" in initial_results:
         wandb.log(
             {
                 "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
@@ -806,7 +806,7 @@ for step in range(num_steps):
             model, tokenizer, step=step + 1, phase="interval"
         )
 
-        if WANDB_ENABLED and wandb.run and interval_results.get("enabled", False):
+        if WANDB_ENABLED and wandb.run and "pass_rate" in interval_results:
             wandb.log(
                 {
                     f"mbpp_eval/step_{step + 1}_pass_rate": interval_results[
@@ -846,7 +846,7 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.config.ena
         model, tokenizer, step=num_steps, phase="final"
     )
 
-    if WANDB_ENABLED and wandb.run and final_results.get("enabled", False):
+    if WANDB_ENABLED and wandb.run and "pass_rate" in final_results:
         wandb.log(
             {
                 "mbpp_eval/final_pass_rate": final_results["pass_rate"],

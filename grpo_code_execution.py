@@ -29,45 +29,61 @@ import argparse
 # Initialize distributed training if available
 def setup_distributed():
     """Setup distributed training environment."""
-    if 'WORLD_SIZE' in os.environ:
-        world_size = int(os.environ['WORLD_SIZE'])
+    if "WORLD_SIZE" in os.environ:
+        world_size = int(os.environ["WORLD_SIZE"])
         if world_size > 1:
             # Running in distributed mode - distributed training explicitly requested
-            rank = int(os.environ.get('RANK', os.environ.get('SLURM_PROCID', 0)))
-            local_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
-            
-            print(f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}")
+            rank = int(os.environ.get("RANK", os.environ.get("SLURM_PROCID", 0)))
+            local_rank = int(
+                os.environ.get("LOCAL_RANK", os.environ.get("SLURM_LOCALID", 0))
+            )
+
+            print(
+                f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}"
+            )
             print(f"🔍 Debug info - process {rank}:")
             print(f"   RANK env var: {os.environ.get('RANK', 'not set')}")
             print(f"   LOCAL_RANK env var: {os.environ.get('LOCAL_RANK', 'not set')}")
             print(f"   SLURM_PROCID: {os.environ.get('SLURM_PROCID', 'not set')}")
             print(f"   SLURM_LOCALID: {os.environ.get('SLURM_LOCALID', 'not set')}")
-            
+
             # Set CUDA device before initializing process group
             if torch.cuda.is_available():
                 num_gpus = torch.cuda.device_count()
-                print(f"🎮 Available GPUs: {num_gpus}, requested local_rank: {local_rank}")
+                print(
+                    f"� Available GPUs: {num_gpus}, requested local_rank: {local_rank}"
+                )
                 if local_rank >= num_gpus:
-                    print(f"❌ Error: local_rank {local_rank} >= available GPUs {num_gpus}")
+                    print(
+                        f"❌ Error: local_rank {local_rank} >= available GPUs {num_gpus}"
+                    )
                     print(f"   This usually means SLURM task/GPU mapping is incorrect")
-                    raise RuntimeError(f"Invalid local_rank {local_rank}, only {num_gpus} GPUs available")
+                    raise RuntimeError(
+                        f"Invalid local_rank {local_rank}, only {num_gpus} GPUs available"
+                    )
                 torch.cuda.set_device(local_rank)
                 print(f"📱 Set CUDA device to: {local_rank}")
-            
+
             try:
-                print(f"🔄 Process {rank}: Attempting to initialize distributed training...")
+                print(
+                    f"🔄 Process {rank}: Attempting to initialize distributed training..."
+                )
                 # Initialize distributed training with explicit parameters
                 dist.init_process_group(
-                    backend='nccl' if torch.cuda.is_available() else 'gloo',
-                    init_method='env://',  # Use environment variables
+                    backend="nccl" if torch.cuda.is_available() else "gloo",
+                    init_method="env://",  # Use environment variables
                     rank=rank,
                     world_size=world_size,
-                    timeout=datetime.timedelta(seconds=120)  # 2 minute timeout
+                    timeout=datetime.timedelta(
+                        minutes=30
+                    ),  # Increased timeout to 30 mins
                 )
                 print(f"✅ Distributed process group initialized successfully")
             except Exception as e:
                 print(f"❌ Failed to initialize distributed training: {e}")
-                print(f"❌ WORLD_SIZE={world_size} indicates distributed training was requested")
+                print(
+                    f"❌ WORLD_SIZE={world_size} indicates distributed training was requested"
+                )
                 print("❌ Distributed training setup failed. Exiting.")
                 print("")
                 print("💡 Troubleshooting tips:")
@@ -75,35 +91,38 @@ def setup_distributed():
                 print("   - Verify MASTER_ADDR is reachable from all nodes")
                 print("   - Ensure NCCL is properly installed")
                 print("   - Check firewall settings for MASTER_PORT")
-                print(f"   - Current settings: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}, MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}")
+                print(
+                    f"   - Current settings: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}, MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}"
+                )
                 raise RuntimeError(f"Distributed training initialization failed: {e}")
-            
+
             return {
-                'is_distributed': True,
-                'local_rank': local_rank,
-                'world_size': world_size,
-                'rank': rank,
-                'is_main_process': rank == 0
+                "is_distributed": True,
+                "local_rank": local_rank,
+                "world_size": world_size,
+                "rank": rank,
+                "is_main_process": rank == 0,
             }
         else:
             # WORLD_SIZE=1, treat as single GPU mode
             print(f"📱 WORLD_SIZE=1, running in single GPU mode")
             return {
-                'is_distributed': False,
-                'local_rank': 0,
-                'world_size': 1,
-                'rank': 0,
-                'is_main_process': True
+                "is_distributed": False,
+                "local_rank": 0,
+                "world_size": 1,
+                "rank": 0,
+                "is_main_process": True,
             }
     else:
         # No WORLD_SIZE set, single GPU mode
         return {
-            'is_distributed': False,
-            'local_rank': 0,
-            'world_size': 1,
-            'rank': 0,
-            'is_main_process': True
+            "is_distributed": False,
+            "local_rank": 0,
+            "world_size": 1,
+            "rank": 0,
+            "is_main_process": True,
         }
+
 
 # Setup distributed training
 dist_info = setup_distributed()
@@ -124,10 +143,12 @@ print(f"   CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not se
 print("")
 
 # Only main process prints the main startup message
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("🚀 Starting GRPO Code Execution Training...")
-    if dist_info['is_distributed']:
-        print(f"🌐 Distributed training: {dist_info['world_size']} GPUs, rank {dist_info['rank']}")
+    if dist_info["is_distributed"]:
+        print(
+            f"🌐 Distributed training: {dist_info['world_size']} GPUs, rank {dist_info['rank']}"
+        )
     print("📋 Initializing components...")
 
 # Parse command line arguments
@@ -151,7 +172,7 @@ WANDB_ENABLED = config["wandb"]["enabled"]
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
-    if dist_info['is_main_process']:
+    if dist_info["is_main_process"]:
         print("🔍 Detecting platform and GPU capabilities...")
     if not torch.cuda.is_available():
         return {
@@ -214,10 +235,10 @@ def detect_platform_and_gpu():
 
 
 # Auto-detect platform and capabilities
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("🔧 Running platform detection...")
 platform_info = detect_platform_and_gpu()
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print(f"🔍 Auto-detected: {platform_info['platform']} platform")
     print(
         f"🎮 GPU: {platform_info['gpu_type']}, BF16 support: {platform_info['supports_bf16']}"
@@ -230,7 +251,7 @@ if dist_info['is_main_process']:
 offline_mode = platform_info["offline_mode"]
 
 # Set global environment variables for transformers library and W&B
-if WANDB_ENABLED and dist_info['is_main_process']:  # Only main process handles W&B
+if WANDB_ENABLED and dist_info["is_main_process"]:  # Only main process handles W&B
     if offline_mode:
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_DATASETS_OFFLINE"] = "1"
@@ -245,7 +266,7 @@ if WANDB_ENABLED and dist_info['is_main_process']:  # Only main process handles 
         )  # Remove explicit WANDB_MODE if it was set to disabled
 elif not WANDB_ENABLED:  # If WANDB_ENABLED is False, disable on all processes
     os.environ["WANDB_MODE"] = "disabled"
-    if dist_info['is_main_process']:
+    if dist_info["is_main_process"]:
         print("🚫 W&B logging explicitly disabled by user configuration.")
 else:
     # Non-main processes in distributed training - disable W&B
@@ -254,7 +275,7 @@ else:
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.vllm_client import (
@@ -265,7 +286,9 @@ from utils.vllm_client import (
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 
 # Initialize wandb with API key from environment (only on main process)
-if WANDB_ENABLED and dist_info['is_main_process']:  # Only main process handles W&B login
+if (
+    WANDB_ENABLED and dist_info["is_main_process"]
+):  # Only main process handles W&B login
     wandb_key = get_api_key("wandb", required=False)
     if wandb_key:
         wandb.login(key=wandb_key)
@@ -274,11 +297,11 @@ if WANDB_ENABLED and dist_info['is_main_process']:  # Only main process handles 
         print(
             "⚠️ No W&B API key found, continuing with W&B logging (if online) or local saves (if offline)."
         )
-elif not WANDB_ENABLED and dist_info['is_main_process']:
+elif not WANDB_ENABLED and dist_info["is_main_process"]:
     print("🚫 Skipping W&B login (W&B is disabled by user).")
 
 # Initialize MBPP evaluator with consolidated config
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("🧪 Setting up MBPP evaluator...")
 
 # Create evaluation config from main config
@@ -294,19 +317,19 @@ eval_config_dict.pop("eval_interval_steps", None)
 log_dir = os.environ.get("GRPO_LOG_DIR", "logs")
 if "GRPO_LOG_DIR" in os.environ:
     eval_config_dict["results_dir"] = log_dir
-    if dist_info['is_main_process']:
+    if dist_info["is_main_process"]:
         print(f"📊 Evaluation results will be saved to: {log_dir}")
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
 
 # Print evaluation config summary (only on main process)
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("\n" + "=" * 50)
     print("📊 MBPP Evaluation Configuration")
     print("=" * 50)
     print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
-if eval_config.enabled and dist_info['is_main_process']:
+if eval_config.enabled and dist_info["is_main_process"]:
     print(f"Questions: {eval_config.num_questions}")
     print(
         f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}"
@@ -319,12 +342,12 @@ if eval_config.enabled and dist_info['is_main_process']:
     print(f"Temperature: {eval_config.temperature}")
     print(f"Max tokens: {eval_config.max_new_tokens}")
     print(f"Timeout: {eval_config.timeout_seconds}s")
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("=" * 50 + "\n")
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     if not mbpp_evaluator.config.enabled:
         print("⚠️ MBPP evaluation disabled - dataset not found")
         print("💡 To enable evaluation, download MBPP dataset first:")
@@ -469,7 +492,7 @@ print(f"📥 Loading trainable model: {model_id}")
 print("⏳ This may take 2-3 minutes depending on model size and storage speed...")
 
 # Load model without device_map for distributed training compatibility
-if dist_info['is_distributed']:
+if dist_info["is_distributed"]:
     print(f"🌐 Loading model for distributed training (no device_map)...")
     model1 = AutoModelForCausalLM.from_pretrained(
         model_id,
@@ -662,7 +685,7 @@ def execution_reward_function(completions, **kwargs):
 
 
 # Training arguments - adjust for GPU memory capacity and model size
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("Setting up GRPO training for code execution...")
 
 # Adaptive settings based on GPU type and model size
@@ -671,33 +694,47 @@ if platform_info["gpu_type"] == "V100":
     if "3B" in model_id:
         # V100 with 3B model - very aggressive memory reduction
         batch_size = 1
-        gradient_accumulation_steps = 8 // dist_info['world_size']  # Adjust for distributed
+        gradient_accumulation_steps = (
+            8 // dist_info["world_size"]
+        )  # Adjust for distributed
         max_prompt_length = 128
         max_completion_length = 256  # Longer for code generation
-        if dist_info['is_main_process']:
-            print(f"🔧 Using V100 + 3B model settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})")
+        if dist_info["is_main_process"]:
+            print(
+                f"🔧 Using V100 + 3B model settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})"
+            )
     else:
         # V100 with 1.5B model - moderate memory reduction
-        batch_size = 4 // max(1, dist_info['world_size'] // 2)  # Scale down batch size for distributed
-        gradient_accumulation_steps = max(1, 2 // dist_info['world_size'])  # Adjust for distributed
+        batch_size = 4 // max(
+            1, dist_info["world_size"] // 2
+        )  # Scale down batch size for distributed
+        gradient_accumulation_steps = max(
+            1, 2 // dist_info["world_size"]
+        )  # Adjust for distributed
         max_prompt_length = 256
         max_completion_length = 384  # Longer for code generation
-        if dist_info['is_main_process']:
-            print(f"🔧 Using V100 + 1.5B model settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})")
+        if dist_info["is_main_process"]:
+            print(
+                f"🔧 Using V100 + 1.5B model settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})"
+            )
 else:
     # A100 or other GPUs - standard settings
-    batch_size = 8 // max(1, dist_info['world_size'] // 2)  # Scale down for distributed
-    gradient_accumulation_steps = max(1, 2 // dist_info['world_size'])  # Adjust for distributed
+    batch_size = 8 // max(1, dist_info["world_size"] // 2)  # Scale down for distributed
+    gradient_accumulation_steps = max(
+        1, 2 // dist_info["world_size"]
+    )  # Adjust for distributed
     max_prompt_length = 512
     max_completion_length = 512  # Longer for code generation
-    if dist_info['is_main_process']:
-        print(f"🔧 Using standard settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})")
+    if dist_info["is_main_process"]:
+        print(
+            f"🔧 Using standard settings (batch_size={batch_size}, grad_accum={gradient_accumulation_steps}, world_size={dist_info['world_size']})"
+        )
 
 # Update output directory to logs folder if running in SLURM
 output_dir = config["training_args"]["output_dir"]
 if "GRPO_LOG_DIR" in os.environ:
     output_dir = os.path.join(os.environ["GRPO_LOG_DIR"], "checkpoints")
-    if dist_info['is_main_process']:
+    if dist_info["is_main_process"]:
         print(f"💾 Checkpoints will be saved to: {output_dir}")
 
 training_args = GRPOConfig(
@@ -718,7 +755,9 @@ training_args = GRPOConfig(
         if platform_info["gpu_type"] == "V100"
         else config["training_args"]["dataloader_pin_memory"]
     ),  # Memory optimization for V100
-    report_to=["wandb"] if (WANDB_ENABLED and dist_info['is_main_process']) else [],  # report to wandb only if enabled on main process
+    report_to=(
+        ["wandb"] if (WANDB_ENABLED and dist_info["is_main_process"]) else []
+    ),  # report to wandb only if enabled on main process
     remove_unused_columns=config["training_args"]["remove_unused_columns"],
     logging_steps=config["training_args"]["logging_steps"],
     max_steps=config["training_args"]["max_steps"],
@@ -804,9 +843,9 @@ class IntervalEvaluationCallback(TrainerCallback):
 
     def on_step_end(self, args, state, control, **kwargs):
         # Only run evaluation on main process
-        if not self.dist_info['is_main_process']:
+        if not self.dist_info["is_main_process"]:
             return
-            
+
         # DEBUG: Always print to see if callback is being called
         print(f"🔍 CALLBACK DEBUG: on_step_end called at step {state.global_step}")
         print(
@@ -850,14 +889,16 @@ interval_callback = IntervalEvaluationCallback(
 trainer.add_callback(interval_callback)
 
 # Train model
-if dist_info['is_main_process']:
+if dist_info["is_main_process"]:
     print("🏃 Starting training...")
 trainer.train()
 
 # Run final evaluation if enabled (only on main process)
-if (config["evaluation"].get("enabled_final", True) and 
-    mbpp_evaluator.should_evaluate(is_end=True) and 
-    dist_info['is_main_process']):
+if (
+    config["evaluation"].get("enabled_final", True)
+    and mbpp_evaluator.should_evaluate(is_end=True)
+    and dist_info["is_main_process"]
+):
     print("🧪 Running final MBPP evaluation...")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"

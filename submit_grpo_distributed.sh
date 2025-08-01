@@ -39,6 +39,12 @@ export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=12355
 export NCCL_DEBUG=INFO  # Enable NCCL debugging
 
+# MIT Supercloud specific: Set NCCL network interface
+# This is often required on HPC clusters to ensure NCCL uses the high-speed interconnect.
+# Common interfaces are 'ib0' (InfiniBand) or an ethernet interface like 'eno1' or 'eth0'.
+# You can find the correct interface by logging into a compute node and running `ip a` or `ifconfig`.
+export NCCL_SOCKET_IFNAME=ib0
+
 # Print distributed training info
 echo "🌐 Distributed Training Setup:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
