@@ -18,13 +18,16 @@
 
 # Parse command line arguments for config overrides
 CONFIG_OVERRIDES=""
+echo "🔍 Debug: Parsing arguments: $@"
 for arg in "$@"; do
+    echo "🔍 Debug: Processing argument: '$arg'"
     if [[ $arg == --* ]]; then
-        # Convert --key=value to key=value format
-        override=$(echo "$arg" | sed 's/^--//')
-        CONFIG_OVERRIDES="$CONFIG_OVERRIDES $override"
+        # Convert --key=value to --key=value format (keep the --)
+        CONFIG_OVERRIDES="$CONFIG_OVERRIDES $arg"
+        echo "🔍 Debug: Added override: $arg"
     fi
 done
+echo "🔍 Debug: Final CONFIG_OVERRIDES: '$CONFIG_OVERRIDES'"
 
 echo "🎮 Starting SPIRAL Code Generation Game Training on Supercloud V100"
 echo "=================================================================="
