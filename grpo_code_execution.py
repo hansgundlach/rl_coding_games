@@ -29,30 +29,51 @@ import argparse
 # Initialize distributed training if available
 def setup_distributed():
     """Setup distributed training environment."""
-    if 'WORLD_SIZE' in os.environ and int(os.environ['WORLD_SIZE']) > 1:
-        # Running in distributed mode
+    if 'WORLD_SIZE' in os.environ:
         world_size = int(os.environ['WORLD_SIZE'])
-        rank = int(os.environ.get('RANK', os.environ.get('SLURM_PROCID', 0)))
-        local_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
-        
-        print(f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}")
-        
-        # Set CUDA device before initializing process group
-        if torch.cuda.is_available():
-            torch.cuda.set_device(local_rank)
-            print(f"📱 Set CUDA device to: {local_rank}")
-        
-        try:
-            # Initialize distributed training
-            dist.init_process_group(
-                backend='nccl' if torch.cuda.is_available() else 'gloo',
-                rank=rank,
-                world_size=world_size
-            )
-            print(f"✅ Distributed process group initialized successfully")
-        except Exception as e:
-            print(f"❌ Failed to initialize distributed training: {e}")
-            print("🔄 Falling back to single GPU mode")
+        if world_size > 1:
+            # Running in distributed mode - distributed training explicitly requested
+            rank = int(os.environ.get('RANK', os.environ.get('SLURM_PROCID', 0)))
+            local_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
+            
+            print(f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}")
+            
+            # Set CUDA device before initializing process group
+            if torch.cuda.is_available():
+                torch.cuda.set_device(local_rank)
+                print(f"📱 Set CUDA device to: {local_rank}")
+            
+            try:
+                # Initialize distributed training
+                dist.init_process_group(
+                    backend='nccl' if torch.cuda.is_available() else 'gloo',
+                    rank=rank,
+                    world_size=world_size
+                )
+                print(f"✅ Distributed process group initialized successfully")
+            except Exception as e:
+                print(f"❌ Failed to initialize distributed training: {e}")
+                print(f"❌ WORLD_SIZE={world_size} indicates distributed training was requested")
+                print("❌ Distributed training setup failed. Exiting.")
+                print("")
+                print("💡 Troubleshooting tips:")
+                print("   - Check network connectivity between nodes")
+                print("   - Verify MASTER_ADDR is reachable from all nodes")
+                print("   - Ensure NCCL is properly installed")
+                print("   - Check firewall settings for MASTER_PORT")
+                print(f"   - Current settings: MASTER_ADDR={os.environ.get('MASTER_ADDR', 'not set')}, MASTER_PORT={os.environ.get('MASTER_PORT', 'not set')}")
+                raise RuntimeError(f"Distributed training initialization failed: {e}")
+            
+            return {
+                'is_distributed': True,
+                'local_rank': local_rank,
+                'world_size': world_size,
+                'rank': rank,
+                'is_main_process': rank == 0
+            }
+        else:
+            # WORLD_SIZE=1, treat as single GPU mode
+            print(f"📱 WORLD_SIZE=1, running in single GPU mode")
             return {
                 'is_distributed': False,
                 'local_rank': 0,
@@ -60,16 +81,8 @@ def setup_distributed():
                 'rank': 0,
                 'is_main_process': True
             }
-        
-        return {
-            'is_distributed': True,
-            'local_rank': local_rank,
-            'world_size': world_size,
-            'rank': rank,
-            'is_main_process': rank == 0
-        }
     else:
-        # Single GPU mode
+        # No WORLD_SIZE set, single GPU mode
         return {
             'is_distributed': False,
             'local_rank': 0,
