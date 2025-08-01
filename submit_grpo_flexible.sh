@@ -135,37 +135,58 @@ echo "🏃 Launching training on $WORLD_SIZE GPUs..."
 echo "Command: srun python -u grpo_code_execution.py --config $CONFIG_FILE"
 echo ""
 
-# Create a wrapper script for each process
+# Create a wrapper script for each process with extensive debugging
 cat > "$GRPO_LOG_DIR/run_process.sh" << 'EOF'
 #!/bin/bash
 set -e
 
-# Log process start with timestamp
+# Create individual process log file
+PROCESS_LOG="$GRPO_LOG_DIR/process_${SLURM_PROCID}_$(date +%H%M%S).log"
+exec > >(tee -a "$PROCESS_LOG") 2>&1
+
+echo "===== PROCESS $SLURM_PROCID DEBUG LOG ====="
 echo "🕒 Process $SLURM_PROCID started at: $(date)" 
 echo "🌐 Hostname: $(hostname)"
 echo "📍 Working directory: $(pwd)"
 echo "🔍 Node ID: $SLURM_NODEID, Local ID: $SLURM_LOCALID"
 echo "🎮 GPU devices: $CUDA_VISIBLE_DEVICES"
+echo "🧠 Memory info: $(free -h | grep Mem)"
+echo "🔧 Process info: PID=$$, PPID=$PPID"
+echo "📊 Load average: $(uptime)"
 echo ""
 
 # Set PyTorch distributed environment variables from SLURM
 export RANK=$SLURM_PROCID
 export LOCAL_RANK=$SLURM_LOCALID
 
-# Debug GPU assignment
-echo "🔍 GPU debugging for process $SLURM_PROCID:"
-echo "   Node: $(hostname)"
+# Comprehensive GPU and environment debugging
+echo "🔍 COMPREHENSIVE DEBUGGING for process $SLURM_PROCID:"
+echo "🌐 Network info:"
+echo "   Node: $(hostname -s)"
+echo "   Full hostname: $(hostname -f)"
+echo "   IP address: $(hostname -I | awk '{print $1}')"
 echo "   SLURM_NODEID: $SLURM_NODEID"
-echo "   SLURM_LOCALID: $SLURM_LOCALID" 
+echo "   SLURM_LOCALID: $SLURM_LOCALID"
+echo "   SLURM_PROCID: $SLURM_PROCID"
 echo "   CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+
+echo "🎮 GPU debugging:"
 if command -v nvidia-smi &> /dev/null; then
-    echo "   Available GPUs on this node:"
-    nvidia-smi --query-gpu=index,name --format=csv,noheader,nounits | while read line; do
-        echo "     $line"
+    echo "   nvidia-smi available - checking GPUs..."
+    nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits | while IFS=',' read idx name mem; do
+        echo "     GPU $idx: $name ($mem MB)"
     done
+    echo "   GPU processes:"
+    nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null || echo "     No GPU processes"
 else
-    echo "   nvidia-smi not available"
+    echo "   ❌ nvidia-smi not available"
 fi
+
+echo "🔍 Python environment check:"
+which python && python --version
+echo "   PyTorch available: $(python -c 'import torch; print(torch.__version__)' 2>/dev/null || echo 'Failed to import')"
+echo "   CUDA available in PyTorch: $(python -c 'import torch; print(torch.cuda.is_available())' 2>/dev/null || echo 'Failed to check')"
+echo "   PyTorch CUDA device count: $(python -c 'import torch; print(torch.cuda.device_count() if torch.cuda.is_available() else 0)' 2>/dev/null || echo 'Failed to check')"
 
 echo "🚀 Distributed environment for process $SLURM_PROCID:"
 echo "   RANK=$RANK"
@@ -184,16 +205,32 @@ if [ -z "$RANK" ] || [ -z "$LOCAL_RANK" ] || [ -z "$WORLD_SIZE" ]; then
     exit 1
 fi
 
-# Verify LOCAL_RANK makes sense for available GPUs
+# Enhanced GPU assignment validation
+echo "🔍 GPU assignment validation:"
 if [ ! -z "$CUDA_VISIBLE_DEVICES" ]; then
     NUM_VISIBLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
+    echo "   CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+    echo "   Number of visible GPUs: $NUM_VISIBLE_GPUS"
+    echo "   Requested LOCAL_RANK: $LOCAL_RANK"
+    
     if [ "$LOCAL_RANK" -ge "$NUM_VISIBLE_GPUS" ]; then
-        echo "❌ Error: LOCAL_RANK ($LOCAL_RANK) >= available GPUs ($NUM_VISIBLE_GPUS)"
-        echo "   CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+        echo "❌ FATAL ERROR: LOCAL_RANK ($LOCAL_RANK) >= available GPUs ($NUM_VISIBLE_GPUS)"
         echo "   This indicates a SLURM GPU assignment issue"
+        echo "   Process $SLURM_PROCID will exit with error"
+        echo "   Check SLURM job configuration and GPU allocation"
         exit 1
+    else
+        echo "   ✅ GPU assignment validation passed"
     fi
+else
+    echo "   ⚠️ CUDA_VISIBLE_DEVICES not set - this may cause issues"
 fi
+
+echo "🔄 About to start Python training..."
+echo "   Config file: $1"
+echo "   Command: python -u grpo_code_execution.py --config $1"
+echo "   Process log: $PROCESS_LOG"
+echo "==============================================="
 
 echo "🏃 Starting Python training at $(date)..."
 python -u grpo_code_execution.py --config "$1"

@@ -26,6 +26,44 @@ import yaml
 import argparse
 
 
+# Add comprehensive debugging at the very start
+print(f"\n{'='*60}")
+print(f"PYTHON PROCESS DEBUG - PID {os.getpid()}")
+print(f"{'='*60}")
+print(f"🕒 Python process started at: {datetime.datetime.now()}")
+print(f"🌐 Hostname: {os.uname().nodename}")
+print(f"📍 Working directory: {os.getcwd()}")
+print(f"🐍 Python executable: {sys.executable}")
+print(f"📦 Python version: {sys.version}")
+print(f"📊 Memory usage: {os.getpid()} - check with ps aux | grep {os.getpid()}")
+
+# Check all SLURM and distributed environment variables
+print(f"\n🔍 COMPLETE ENVIRONMENT DUMP:")
+dist_env_vars = ['WORLD_SIZE', 'RANK', 'LOCAL_RANK', 'MASTER_ADDR', 'MASTER_PORT', 
+                 'SLURM_PROCID', 'SLURM_LOCALID', 'SLURM_NODEID', 'SLURM_NTASKS',
+                 'SLURM_NNODES', 'SLURM_JOB_ID', 'CUDA_VISIBLE_DEVICES', 'NCCL_DEBUG']
+for var in dist_env_vars:
+    value = os.environ.get(var, 'NOT_SET')
+    print(f"   {var}: {value}")
+
+# Test basic PyTorch functionality
+print(f"\n🔥 PYTORCH ENVIRONMENT:")
+try:
+    print(f"   PyTorch version: {torch.__version__}")
+    print(f"   CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"   CUDA version: {torch.version.cuda}")
+        print(f"   CUDA device count: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            props = torch.cuda.get_device_properties(i)
+            print(f"     GPU {i}: {props.name} ({props.total_memory // 1024**2} MB)")
+    else:
+        print("   ❌ CUDA not available - this will cause distributed training to fail")
+except Exception as e:
+    print(f"   ❌ Error checking PyTorch: {e}")
+
+print(f"{'='*60}\n")
+
 # Initialize distributed training if available
 def setup_distributed():
     """Setup distributed training environment."""
@@ -68,15 +106,35 @@ def setup_distributed():
                 print(
                     f"🔄 Process {rank}: Attempting to initialize distributed training..."
                 )
+                print(f"🔍 Pre-init check - backend: {'nccl' if torch.cuda.is_available() else 'gloo'}")
+                print(f"🔍 Pre-init check - init_method: env://")
+                print(f"🔍 Pre-init check - rank: {rank}, world_size: {world_size}")
+                
+                # Test basic distributed functionality before full init
+                if torch.cuda.is_available():
+                    try:
+                        # Try to set device first
+                        current_device = torch.cuda.current_device()
+                        print(f"🎮 Current CUDA device before init: {current_device}")
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not get current CUDA device: {e}")
+                        
                 # Initialize distributed training with explicit parameters
+                start_time = datetime.datetime.now()
+                print(f"🔄 Starting dist.init_process_group at {start_time}...")
+                
                 dist.init_process_group(
                     backend="nccl" if torch.cuda.is_available() else "gloo",
                     init_method="env://",  # Use environment variables
                     rank=rank,
                     world_size=world_size,
-                    timeout=datetime.timedelta(minutes=5),  # Reduced timeout to 5 mins
+                    timeout=datetime.timedelta(minutes=10),  # Increase timeout for debugging
                 )
-                print(f"✅ Distributed process group initialized successfully")
+                
+                end_time = datetime.datetime.now()
+                init_duration = (end_time - start_time).total_seconds()
+                print(f"✅ Process {rank}: Distributed process group initialized successfully in {init_duration:.2f} seconds")
+                print(f"🌐 Process {rank}: Connected to {world_size} total processes")
             except Exception as e:
                 print(f"❌ Failed to initialize distributed training: {e}")
                 print(
@@ -122,8 +180,25 @@ def setup_distributed():
         }
 
 
+# Create a checkpoint file to track process progress
+checkpoint_file = f"/tmp/grpo_process_checkpoint_{os.environ.get('SLURM_JOB_ID', 'unknown')}_{os.getpid()}.txt"
+with open(checkpoint_file, 'w') as f:
+    f.write(f"Process {os.getpid()} reached setup_distributed at {datetime.datetime.now()}\n")
+
+print(f"📄 Created checkpoint file: {checkpoint_file}")
+print(f"🔄 About to call setup_distributed()...")
+
 # Setup distributed training
-dist_info = setup_distributed()
+try:
+    dist_info = setup_distributed()
+    with open(checkpoint_file, 'a') as f:
+        f.write(f"Process {os.getpid()} completed setup_distributed successfully at {datetime.datetime.now()}\n")
+    print(f"✅ setup_distributed() completed successfully for process {dist_info['rank']}")
+except Exception as e:
+    with open(checkpoint_file, 'a') as f:
+        f.write(f"Process {os.getpid()} FAILED setup_distributed at {datetime.datetime.now()}: {str(e)}\n")
+    print(f"❌ setup_distributed() FAILED: {e}")
+    raise
 
 # Print startup messages with timestamp (from all processes for debugging)
 print(f"🕒 Process rank {dist_info['rank']} starting at: {datetime.datetime.now()}")
