@@ -35,8 +35,21 @@ This repository implements reinforcement learning training for code generation l
 ## 🚀 Quick Start
 
 ### Running GRPO Code Execution Training
+
+#### Single GPU
 ```bash
 python grpo_code_execution.py --config configs/grpo_code_execution.yaml
+```
+
+#### Distributed Training (Multi-GPU)
+```bash
+# Flexible GPU count (1-4 nodes, 2-8 total GPUs)
+sbatch --nodes=4 submit_grpo_flexible.sh configs/grpo_code_execution.yaml  # 8 GPUs
+sbatch --nodes=2 submit_grpo_flexible.sh configs/grpo_code_execution.yaml  # 4 GPUs
+sbatch --nodes=1 submit_grpo_flexible.sh configs/grpo_code_execution.yaml  # 2 GPUs
+
+# Fixed 8 GPU setup
+sbatch submit_grpo_distributed.sh
 ```
 
 ### Running SPIRAL Self-Play Training  
@@ -58,12 +71,15 @@ sbatch submit_grpo_training.sh
 - Conservative memory settings (smaller batch sizes)
 - Local model caching in `./model_cache/`
 - Reduced evaluation problem counts
+- **Distributed training support**: 1-4 nodes (2-8 GPUs total)
+- **Expected speedups**: 2 GPUs: ~1.8x, 4 GPUs: ~3x, 8 GPUs: ~3.5x
 
 ### Lambda Labs A100/H100
 - Online mode with W&B logging
 - Aggressive memory utilization
 - BF16 precision support
 - Larger evaluation sets
+- **Better distributed scaling** due to higher memory bandwidth
 
 ## 📊 Evaluation & Monitoring
 

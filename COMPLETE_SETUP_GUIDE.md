@@ -317,6 +317,7 @@ checkpoints:
 
 ### Memory Requirements by Configuration
 
+#### Single GPU Training
 | Model Size | LoRA Rank | Batch Size | GPU Memory | Training Speed |
 |------------|-----------|------------|------------|----------------|
 | Qwen2.5-1.5B | 8 | 2 | ~6GB | Fast |
@@ -324,6 +325,18 @@ checkpoints:
 | Qwen2.5-3B | 16 | 2 | ~12GB | Medium |
 | Qwen2.5-3B | 16 | 8 | ~16GB | Medium |
 | Qwen2.5-3B | 32 | 8 | ~20GB | Slow |
+
+#### Distributed Training (V100s - MIT Supercloud)
+| GPUs | Model Size | Per-GPU Batch | Effective Batch | Total Memory | Expected Speedup |
+|------|------------|---------------|-----------------|--------------|------------------|
+| 2 | Qwen2.5-1.5B | 4 | 8 | 2x8GB | ~1.8x |
+| 4 | Qwen2.5-1.5B | 2 | 8 | 4x8GB | ~3.0x |
+| 8 | Qwen2.5-1.5B | 1 | 8 | 8x8GB | ~3.5x |
+| 2 | Qwen2.5-3B | 1 | 2 | 2x16GB | ~1.8x |
+| 4 | Qwen2.5-3B | 1 | 4 | 4x16GB | ~3.0x |
+| 8 | Qwen2.5-3B | 1 | 8 | 8x16GB | ~3.5x |
+
+> **Note**: V100 memory constraints limit per-GPU batch sizes. Communication overhead prevents linear scaling.
 
 ## 📊 Monitoring Training
 
@@ -360,6 +373,43 @@ du -h checkpoints/qwen_ppo/
 - **Goal**: Maintain coding ability while learning game strategy
 
 ## 🚀 Advanced Usage
+
+### Distributed Training (Multi-GPU)
+
+For faster training on multiple GPUs, use the distributed training capabilities:
+
+#### Single Node (2 GPUs)
+```bash
+# Launch on single node with 2 GPUs
+sbatch --nodes=1 submit_grpo_flexible.sh configs/grpo_code_execution.yaml
+```
+
+#### Multi-Node Training (Up to 8 GPUs)
+```bash
+# Launch on 4 nodes (8 total GPUs) - MIT Supercloud
+sbatch --nodes=4 submit_grpo_flexible.sh configs/grpo_code_execution.yaml
+
+# Launch on 2 nodes (4 total GPUs) - balanced performance
+sbatch --nodes=2 submit_grpo_flexible.sh configs/grpo_code_execution.yaml
+```
+
+#### Expected Speedups
+- **2 GPUs**: ~1.8x speedup (single node, low communication overhead)
+- **4 GPUs**: ~3-4x speedup (2 nodes, moderate communication overhead)  
+- **8 GPUs**: ~3-4x speedup (4 nodes, higher communication overhead due to V100 memory constraints)
+
+#### Distributed Training Features
+- ✅ **Automatic batch size scaling** based on GPU count
+- ✅ **Wandb logging** only on main process (rank 0)
+- ✅ **MBPP evaluation** only on main process to avoid conflicts
+- ✅ **Flexible GPU count** (1, 2, 3, or 4 nodes supported)
+- ✅ **V100 memory optimization** with conservative settings
+
+#### Test Distributed Setup
+```bash
+# Test distributed environment before training
+srun --nodes=2 --ntasks-per-node=2 --gres=gpu:2 python test_distributed.py
+```
 
 ### Custom Model Training
 ```bash
@@ -398,8 +448,38 @@ If you encounter issues:
 
 1. **Check this guide** for common solutions
 2. **Run the test script**: `python test_pipeline.py`
-3. **Check system requirements** match your setup
-4. **Verify all dependencies** are installed correctly
-5. **Monitor GPU memory** usage during training
+3. **Test distributed setup**: `python test_distributed.py` (for multi-GPU)
+4. **Check system requirements** match your setup
+5. **Verify all dependencies** are installed correctly
+6. **Monitor GPU memory** usage during training
+
+### Distributed Training Troubleshooting
+
+#### NCCL Communication Errors
+```bash
+# Error: NCCL initialization failed
+```
+**Solutions:**
+- Check CUDA version compatibility: `nvidia-smi`
+- Verify network connectivity between nodes
+- Ensure MASTER_ADDR is reachable from all nodes
+
+#### Batch Size Too Small
+```bash
+# Error: batch_size must be divisible by num_generations
+```
+**Solutions:**
+- Reduce number of nodes: `sbatch --nodes=2` instead of `--nodes=4`
+- Increase per-device batch size in config (if memory allows)
+- Adjust `num_generations` in GRPO config
+
+#### W&B Duplicate Runs
+```bash
+# Warning: Multiple W&B processes detected
+```
+**Solution:**
+- This is normal - only rank 0 logs to W&B, others are disabled
+- Check W&B dashboard for single run entry
 
 The setup is complete when `test_pipeline.py` shows all tests passing! 🎉
+For distributed training, `test_distributed.py` should also pass on all nodes.
