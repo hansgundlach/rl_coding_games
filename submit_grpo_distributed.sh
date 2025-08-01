@@ -33,6 +33,7 @@ export GRPO_LOG_DIR="logs/job_${SLURM_JOB_ID}"
 export WORLD_SIZE=$((NODES * GPUS_PER_NODE))
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=12355
+export NCCL_DEBUG=INFO  # Enable NCCL debugging
 
 # Print distributed training info
 echo "🌐 Distributed Training Setup:"
@@ -93,10 +94,17 @@ echo "🏃 Launching distributed training on $WORLD_SIZE GPUs..."
 echo "Command: srun python -u grpo_code_execution.py --config $CONFIG_FILE"
 echo ""
 
-# Run the training with output redirection to job-specific log
-srun python -u grpo_code_execution.py \
-    --config "$CONFIG_FILE" \
-    2>&1 | tee "$GRPO_LOG_DIR/training_output.log"
+# Run the training with proper distributed environment setup
+srun --export=ALL \
+    bash -c '
+        export RANK=$SLURM_PROCID
+        export LOCAL_RANK=$SLURM_LOCALID
+        export MASTER_ADDR='"$MASTER_ADDR"'
+        export MASTER_PORT='"$MASTER_PORT"'
+        export WORLD_SIZE='"$WORLD_SIZE"'
+        echo "Process $SLURM_PROCID: RANK=$RANK, LOCAL_RANK=$LOCAL_RANK, WORLD_SIZE=$WORLD_SIZE"
+        python -u grpo_code_execution.py --config '"$CONFIG_FILE"'
+    ' 2>&1 | tee "$GRPO_LOG_DIR/training_output.log"
 
 # Capture exit status
 TRAINING_EXIT_CODE=$?

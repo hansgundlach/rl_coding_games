@@ -29,15 +29,37 @@ import argparse
 # Initialize distributed training if available
 def setup_distributed():
     """Setup distributed training environment."""
-    if 'WORLD_SIZE' in os.environ:
+    if 'WORLD_SIZE' in os.environ and int(os.environ['WORLD_SIZE']) > 1:
         # Running in distributed mode
-        local_rank = int(os.environ.get('LOCAL_RANK', 0))
         world_size = int(os.environ['WORLD_SIZE'])
-        rank = int(os.environ.get('RANK', 0))
+        rank = int(os.environ.get('RANK', os.environ.get('SLURM_PROCID', 0)))
+        local_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
         
-        # Initialize distributed training
-        dist.init_process_group(backend='nccl')
-        torch.cuda.set_device(local_rank)
+        print(f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}")
+        
+        # Set CUDA device before initializing process group
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+            print(f"📱 Set CUDA device to: {local_rank}")
+        
+        try:
+            # Initialize distributed training
+            dist.init_process_group(
+                backend='nccl' if torch.cuda.is_available() else 'gloo',
+                rank=rank,
+                world_size=world_size
+            )
+            print(f"✅ Distributed process group initialized successfully")
+        except Exception as e:
+            print(f"❌ Failed to initialize distributed training: {e}")
+            print("🔄 Falling back to single GPU mode")
+            return {
+                'is_distributed': False,
+                'local_rank': 0,
+                'world_size': 1,
+                'rank': 0,
+                'is_main_process': True
+            }
         
         return {
             'is_distributed': True,
