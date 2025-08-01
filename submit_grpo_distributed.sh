@@ -115,6 +115,21 @@ echo ""
 export RANK=$SLURM_PROCID
 export LOCAL_RANK=$SLURM_LOCALID
 
+# Debug GPU assignment
+echo "🔍 GPU debugging for process $SLURM_PROCID:"
+echo "   Node: $(hostname)"
+echo "   SLURM_NODEID: $SLURM_NODEID"
+echo "   SLURM_LOCALID: $SLURM_LOCALID" 
+echo "   CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+if command -v nvidia-smi &> /dev/null; then
+    echo "   Available GPUs on this node:"
+    nvidia-smi --query-gpu=index,name --format=csv,noheader,nounits | while read line; do
+        echo "     $line"
+    done
+else
+    echo "   nvidia-smi not available"
+fi
+
 echo "🚀 Distributed environment for process $SLURM_PROCID:"
 echo "   RANK=$RANK"
 echo "   LOCAL_RANK=$LOCAL_RANK" 
@@ -130,6 +145,17 @@ if [ -z "$RANK" ] || [ -z "$LOCAL_RANK" ] || [ -z "$WORLD_SIZE" ]; then
     echo "   LOCAL_RANK: '$LOCAL_RANK'"
     echo "   WORLD_SIZE: '$WORLD_SIZE'"
     exit 1
+fi
+
+# Verify LOCAL_RANK makes sense for available GPUs
+if [ ! -z "$CUDA_VISIBLE_DEVICES" ]; then
+    NUM_VISIBLE_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
+    if [ "$LOCAL_RANK" -ge "$NUM_VISIBLE_GPUS" ]; then
+        echo "❌ Error: LOCAL_RANK ($LOCAL_RANK) >= available GPUs ($NUM_VISIBLE_GPUS)"
+        echo "   CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+        echo "   This indicates a SLURM GPU assignment issue"
+        exit 1
+    fi
 fi
 
 echo "🏃 Starting Python training at $(date)..."

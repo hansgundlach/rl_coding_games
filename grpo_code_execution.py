@@ -45,6 +45,12 @@ def setup_distributed():
             
             # Set CUDA device before initializing process group
             if torch.cuda.is_available():
+                num_gpus = torch.cuda.device_count()
+                print(f"🎮 Available GPUs: {num_gpus}, requested local_rank: {local_rank}")
+                if local_rank >= num_gpus:
+                    print(f"❌ Error: local_rank {local_rank} >= available GPUs {num_gpus}")
+                    print(f"   This usually means SLURM task/GPU mapping is incorrect")
+                    raise RuntimeError(f"Invalid local_rank {local_rank}, only {num_gpus} GPUs available")
                 torch.cuda.set_device(local_rank)
                 print(f"📱 Set CUDA device to: {local_rank}")
             
@@ -462,13 +468,28 @@ else:
 print(f"📥 Loading trainable model: {model_id}")
 print("⏳ This may take 2-3 minutes depending on model size and storage speed...")
 
-model1 = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    torch_dtype="auto",
-    device_map="auto",
-    cache_dir=cache_dir,
-    local_files_only=offline_mode,
-)
+# Load model without device_map for distributed training compatibility
+if dist_info['is_distributed']:
+    print(f"🌐 Loading model for distributed training (no device_map)...")
+    model1 = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype="auto",
+        cache_dir=cache_dir,
+        local_files_only=offline_mode,
+    )
+    # Move to appropriate device after loading
+    device = f"cuda:{dist_info['local_rank']}" if torch.cuda.is_available() else "cpu"
+    model1 = model1.to(device)
+    print(f"📱 Moved model to device: {device}")
+else:
+    print(f"📱 Loading model for single GPU training (with device_map)...")
+    model1 = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype="auto",
+        device_map="auto",
+        cache_dir=cache_dir,
+        local_files_only=offline_mode,
+    )
 print("🔤 Loading tokenizer...")
 tokenizer1 = AutoTokenizer.from_pretrained(
     model_id, cache_dir=cache_dir, local_files_only=offline_mode
