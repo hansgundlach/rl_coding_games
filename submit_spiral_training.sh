@@ -10,6 +10,21 @@
 
 # MIT Supercloud SLURM script for SPIRAL Self-Play Training
 # Single V100 GPU training with logs output
+#
+# Usage: sbatch submit_spiral_training.sh [config_overrides...]
+# Examples:
+#   sbatch submit_spiral_training.sh --num_steps=50 --learning_rate=0.0001
+#   sbatch submit_spiral_training.sh --games_per_step_v100=3 --eval_interval_steps=10
+
+# Parse command line arguments for config overrides
+CONFIG_OVERRIDES=""
+for arg in "$@"; do
+    if [[ $arg == --* ]]; then
+        # Convert --key=value to key=value format
+        override=$(echo "$arg" | sed 's/^--//')
+        CONFIG_OVERRIDES="$CONFIG_OVERRIDES $override"
+    fi
+done
 
 echo "🌀 Starting SPIRAL Self-Play Training on Supercloud V100"
 echo "========================================================="
@@ -17,6 +32,9 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "Start time: $(date)"
+if [ ! -z "$CONFIG_OVERRIDES" ]; then
+    echo "Config overrides: $CONFIG_OVERRIDES"
+fi
 echo ""
 
 # Environment setup
@@ -72,13 +90,15 @@ echo ""
 
 # Start training with timestamping
 echo "🏋️ Starting SPIRAL self-play training at $(date)..."
-echo "Command: python spiral_self_play.py --config configs/spiral_self_play.yaml"
+PYTHON_CMD="python spiral_self_play.py --config configs/spiral_self_play.yaml"
+if [ ! -z "$CONFIG_OVERRIDES" ]; then
+    PYTHON_CMD="$PYTHON_CMD $CONFIG_OVERRIDES"
+fi
+echo "Command: $PYTHON_CMD"
 echo ""
 
 # Run the training with output redirection to job-specific log
-python spiral_self_play.py \
-    --config configs/spiral_self_play.yaml \
-    2>&1 | tee "$JOB_LOG_DIR/training_output.log"
+eval "$PYTHON_CMD" 2>&1 | tee "$JOB_LOG_DIR/training_output.log"
 
 # Capture exit status
 TRAINING_EXIT_CODE=$?
