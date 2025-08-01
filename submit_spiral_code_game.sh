@@ -13,8 +13,8 @@
 #
 # Usage: sbatch submit_spiral_code_game.sh [config_overrides...]
 # Examples:
-#   sbatch submit_spiral_code_game.sh --num_steps=50 --learning_rate=0.0001
-#   sbatch submit_spiral_code_game.sh --games_per_step_v100=3 --eval_interval_steps=10
+#   sbatch submit_spiral_code_game.sh --training.num_steps=50 --training.learning_rate=0.0001
+#   sbatch submit_spiral_code_game.sh --training.games_per_step_v100=3 --evaluation.eval_interval_steps=10
 
 # Parse command line arguments for config overrides
 CONFIG_OVERRIDES=""
@@ -22,7 +22,7 @@ echo "🔍 Debug: Parsing arguments: $@"
 for arg in "$@"; do
     echo "🔍 Debug: Processing argument: '$arg'"
     if [[ $arg == --* ]]; then
-        # Convert --key=value to --key=value format (keep the --)
+        # Keep the -- prefix for Python script
         CONFIG_OVERRIDES="$CONFIG_OVERRIDES $arg"
         echo "🔍 Debug: Added override: $arg"
     fi

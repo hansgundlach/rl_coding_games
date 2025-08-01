@@ -22,7 +22,7 @@ echo "🔍 Debug: Parsing arguments: $@"
 for arg in "$@"; do
     echo "🔍 Debug: Processing argument: '$arg'"
     if [[ $arg == --* ]]; then
-        # Convert --key=value to --key=value format (keep the --)
+        # Keep the -- prefix for Python script
         CONFIG_OVERRIDES="$CONFIG_OVERRIDES $arg"
         echo "🔍 Debug: Added override: $arg"
     fi
