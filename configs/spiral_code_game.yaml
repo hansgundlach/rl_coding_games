@@ -19,7 +19,7 @@ game:
 
 # Training parameters
 training:
-  num_steps: 100
+  num_steps: 200
   learning_rate: 0.00002
   rae_alpha: 0.95  # Role-conditioned advantage estimation decay rate
   gradient_clip_norm: 1.0
