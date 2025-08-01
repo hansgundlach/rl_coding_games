@@ -595,14 +595,14 @@ def compute_policy_gradient_loss(
                     -advantage_tensor * sequence_log_prob
                 )  # Use the tensor version of advantage
 
-                trajectory_loss += loss
+                trajectory_loss = trajectory_loss + loss
                 num_updates += 1
 
                 # Clear intermediate tensors to free memory
                 del outputs, logits, response_logits, log_probs, token_log_probs
                 torch.cuda.empty_cache()
 
-            total_loss += trajectory_loss
+            total_loss = total_loss + trajectory_loss
 
     return total_loss / max(num_updates, 1)
 
