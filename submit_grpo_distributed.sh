@@ -41,9 +41,21 @@ export NCCL_DEBUG=INFO  # Enable NCCL debugging
 
 # MIT Supercloud specific: Set NCCL network interface
 # This is often required on HPC clusters to ensure NCCL uses the high-speed interconnect.
-# Common interfaces are 'ib0' (InfiniBand) or an ethernet interface like 'eno1' or 'eth0'.
-# You can find the correct interface by logging into a compute node and running `ip a` or `ifconfig`.
-export NCCL_SOCKET_IFNAME=ib0
+# Auto-detect available network interface
+if ip link show ib0 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=ib0
+    echo "🌐 Using InfiniBand interface: ib0"
+elif ip link show eth0 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=eth0
+    echo "🌐 Using Ethernet interface: eth0"
+elif ip link show eno1 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=eno1
+    echo "🌐 Using Ethernet interface: eno1"
+else
+    echo "⚠️ No known network interface found, using default NCCL settings"
+    echo "Available interfaces:"
+    ip link show | grep -E "^[0-9]+:" | cut -d: -f2 | tr -d ' '
+fi
 
 # Print distributed training info
 echo "🌐 Distributed Training Setup:"

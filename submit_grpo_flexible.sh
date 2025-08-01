@@ -47,7 +47,21 @@ export NCCL_DEBUG=INFO  # Enable NCCL debugging
 
 # MIT Supercloud specific: Set NCCL network interface for high-speed interconnect
 # This is critical for multi-node communication on HPC clusters.
-export NCCL_SOCKET_IFNAME=ib0
+# Auto-detect available network interface
+if ip link show ib0 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=ib0
+    echo "🌐 Using InfiniBand interface: ib0"
+elif ip link show eth0 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=eth0
+    echo "🌐 Using Ethernet interface: eth0"
+elif ip link show eno1 >/dev/null 2>&1; then
+    export NCCL_SOCKET_IFNAME=eno1
+    echo "🌐 Using Ethernet interface: eno1"
+else
+    echo "⚠️ No known network interface found, using default NCCL settings"
+    echo "Available interfaces:"
+    ip link show | grep -E "^[0-9]+:" | cut -d: -f2 | tr -d ' '
+fi
 
 echo "🌐 Distributed Setup:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
@@ -67,6 +81,13 @@ elif [[ $WORLD_SIZE -eq 8 ]]; then
 fi
 
 echo ""
+
+# Function to cleanup on exit
+cleanup() {
+    echo "🧹 Cleaning up distributed processes..."
+    pkill -f "grpo_code_execution.py" || true
+}
+trap cleanup EXIT
 
 # Environment setup
 echo "🔧 Setting up environment..."
