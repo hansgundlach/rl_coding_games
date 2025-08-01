@@ -508,7 +508,7 @@ def compute_policy_gradient_loss(
     """
     Compute policy gradient loss using SPIRAL's RAE method with memory optimization.
     """
-    total_loss = torch.tensor(0.0, device=device)  # Changed to torch.Tensor
+    total_loss = torch.zeros(1, device=device, requires_grad=True)
     num_updates = 0
 
     # Process trajectories in smaller chunks to avoid memory accumulation
@@ -530,9 +530,7 @@ def compute_policy_gradient_loss(
             ).detach()
 
             # Process moves one at a time to minimize memory usage
-            trajectory_loss = torch.tensor(
-                0.0, device=device
-            )  # Changed to torch.Tensor
+            trajectory_loss = torch.zeros(1, device=device, requires_grad=True)
             for move_data in trajectory.player_trajectories[player_id]:
                 observation = move_data["observation"]
                 response = move_data["response"]
