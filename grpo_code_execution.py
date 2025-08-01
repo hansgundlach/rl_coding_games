@@ -37,6 +37,11 @@ def setup_distributed():
             local_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('SLURM_LOCALID', 0)))
             
             print(f"🌐 Distributed setup: rank={rank}, local_rank={local_rank}, world_size={world_size}")
+            print(f"🔍 Debug info - process {rank}:")
+            print(f"   RANK env var: {os.environ.get('RANK', 'not set')}")
+            print(f"   LOCAL_RANK env var: {os.environ.get('LOCAL_RANK', 'not set')}")
+            print(f"   SLURM_PROCID: {os.environ.get('SLURM_PROCID', 'not set')}")
+            print(f"   SLURM_LOCALID: {os.environ.get('SLURM_LOCALID', 'not set')}")
             
             # Set CUDA device before initializing process group
             if torch.cuda.is_available():
@@ -44,11 +49,14 @@ def setup_distributed():
                 print(f"📱 Set CUDA device to: {local_rank}")
             
             try:
-                # Initialize distributed training
+                print(f"🔄 Process {rank}: Attempting to initialize distributed training...")
+                # Initialize distributed training with explicit parameters
                 dist.init_process_group(
                     backend='nccl' if torch.cuda.is_available() else 'gloo',
+                    init_method='env://',  # Use environment variables
                     rank=rank,
-                    world_size=world_size
+                    world_size=world_size,
+                    timeout=datetime.timedelta(seconds=120)  # 2 minute timeout
                 )
                 print(f"✅ Distributed process group initialized successfully")
             except Exception as e:
@@ -94,7 +102,22 @@ def setup_distributed():
 # Setup distributed training
 dist_info = setup_distributed()
 
-# Only print startup messages from main process
+# Print startup messages with timestamp (from all processes for debugging)
+print(f"🕒 Process rank {dist_info['rank']} starting at: {datetime.datetime.now()}")
+print(f"🌐 Hostname: {os.uname().nodename}")
+print(f"📍 Working directory: {os.getcwd()}")
+print(f"🔍 Environment check:")
+print(f"   RANK: {os.environ.get('RANK', 'not set')}")
+print(f"   LOCAL_RANK: {os.environ.get('LOCAL_RANK', 'not set')}")
+print(f"   WORLD_SIZE: {os.environ.get('WORLD_SIZE', 'not set')}")
+print(f"   SLURM_PROCID: {os.environ.get('SLURM_PROCID', 'not set')}")
+print(f"   SLURM_LOCALID: {os.environ.get('SLURM_LOCALID', 'not set')}")
+print(f"   MASTER_ADDR: {os.environ.get('MASTER_ADDR', 'not set')}")
+print(f"   MASTER_PORT: {os.environ.get('MASTER_PORT', 'not set')}")
+print(f"   CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
+print("")
+
+# Only main process prints the main startup message
 if dist_info['is_main_process']:
     print("🚀 Starting GRPO Code Execution Training...")
     if dist_info['is_distributed']:

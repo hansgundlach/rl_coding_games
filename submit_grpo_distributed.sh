@@ -23,11 +23,15 @@ echo "   - Total GPUs: $((NODES * GPUS_PER_NODE))"
 echo "   - Config file: $CONFIG_FILE"
 echo "   - Job ID: $SLURM_JOB_ID"
 
-# Create logs directory if it doesn't exist
-mkdir -p logs/job_${SLURM_JOB_ID}
+# Create logs directory with timestamp
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+JOB_LOG_DIR="logs/job_${SLURM_JOB_ID}_${TIMESTAMP}"
+mkdir -p "$JOB_LOG_DIR"
+echo "📁 Created job log directory: $JOB_LOG_DIR"
+echo "🕒 Job started at: $(date)"
 
 # Set log directory for the training script
-export GRPO_LOG_DIR="logs/job_${SLURM_JOB_ID}"
+export GRPO_LOG_DIR="$JOB_LOG_DIR"
 
 # Set distributed training environment variables
 export WORLD_SIZE=$((NODES * GPUS_PER_NODE))
@@ -94,17 +98,51 @@ echo "🏃 Launching distributed training on $WORLD_SIZE GPUs..."
 echo "Command: srun python -u grpo_code_execution.py --config $CONFIG_FILE"
 echo ""
 
-# Run the training with proper distributed environment setup
-srun --export=ALL \
-    bash -c '
-        export RANK=$SLURM_PROCID
-        export LOCAL_RANK=$SLURM_LOCALID
-        export MASTER_ADDR='"$MASTER_ADDR"'
-        export MASTER_PORT='"$MASTER_PORT"'
-        export WORLD_SIZE='"$WORLD_SIZE"'
-        echo "Process $SLURM_PROCID: RANK=$RANK, LOCAL_RANK=$LOCAL_RANK, WORLD_SIZE=$WORLD_SIZE"
-        python -u grpo_code_execution.py --config '"$CONFIG_FILE"'
-    ' 2>&1 | tee "$GRPO_LOG_DIR/training_output.log"
+# Create a wrapper script for each process
+cat > "$GRPO_LOG_DIR/run_process.sh" << 'EOF'
+#!/bin/bash
+set -e
+
+# Log process start with timestamp
+echo "🕒 Process $SLURM_PROCID started at: $(date)" 
+echo "🌐 Hostname: $(hostname)"
+echo "📍 Working directory: $(pwd)"
+echo "🔍 Node ID: $SLURM_NODEID, Local ID: $SLURM_LOCALID"
+echo "🎮 GPU devices: $CUDA_VISIBLE_DEVICES"
+echo ""
+
+# Set PyTorch distributed environment variables from SLURM
+export RANK=$SLURM_PROCID
+export LOCAL_RANK=$SLURM_LOCALID
+
+echo "🚀 Distributed environment for process $SLURM_PROCID:"
+echo "   RANK=$RANK"
+echo "   LOCAL_RANK=$LOCAL_RANK" 
+echo "   WORLD_SIZE=$WORLD_SIZE"
+echo "   MASTER_ADDR=$MASTER_ADDR"
+echo "   MASTER_PORT=$MASTER_PORT"
+echo ""
+
+# Verify environment variables are set
+if [ -z "$RANK" ] || [ -z "$LOCAL_RANK" ] || [ -z "$WORLD_SIZE" ]; then
+    echo "❌ Error: Required environment variables not set!"
+    echo "   RANK: '$RANK'"
+    echo "   LOCAL_RANK: '$LOCAL_RANK'"
+    echo "   WORLD_SIZE: '$WORLD_SIZE'"
+    exit 1
+fi
+
+echo "🏃 Starting Python training at $(date)..."
+python -u grpo_code_execution.py --config "$1"
+EOF
+
+chmod +x "$GRPO_LOG_DIR/run_process.sh"
+
+# Run training with timestamped log file
+LOG_FILE="$GRPO_LOG_DIR/training_output_$(date +%Y%m%d_%H%M%S).log"
+echo "📄 Training output will be logged to: $LOG_FILE"
+
+srun "$GRPO_LOG_DIR/run_process.sh" "$CONFIG_FILE" 2>&1 | tee "$LOG_FILE"
 
 # Capture exit status
 TRAINING_EXIT_CODE=$?
