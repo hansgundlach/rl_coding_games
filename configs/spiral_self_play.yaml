@@ -14,7 +14,7 @@ lora:
 
 # --- SPIRAL Training Parameters ---
 training:
-  num_steps: 10  # Number of training steps
+  num_steps: 100  # Number of training steps
   learning_rate: 0.000001  # 1e-6
   
   # Game parameters
@@ -43,10 +43,10 @@ evaluation:
   enabled_initial: True   # Run evaluation before training
   enabled_final: True     # Run evaluation after training
   enabled_interval: True  # Run evaluation during training
-  eval_interval_steps: 2  # Evaluate every N steps (for quick testing)
+  eval_interval_steps: 10  # Evaluate every N steps (for quick testing)
 
   # MBPP Configuration
-  num_questions: 5        # Small number for quick evaluation
+  num_questions: 10        # Small number for quick evaluation
   timeout_seconds: 5      # Short timeout for V100 compatibility
   max_new_tokens: 256     # Conservative for memory
   temperature: 0.2
