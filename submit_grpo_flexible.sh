@@ -4,8 +4,8 @@
 # Where N can be 1, 2, 3, or 4 nodes
 
 #SBATCH --job-name=grpo-flex
-#SBATCH --output=slurm-grpo-flex-%j.out
-#SBATCH --error=slurm-grpo-flex-%j.err
+#SBATCH --output=logs/job_%j_%x/slurm-grpo-flex-%j.out
+#SBATCH --error=logs/job_%j_%x/slurm-grpo-flex-%j.err
 #SBATCH --ntasks-per-node=2         # 2 V100s per node
 #SBATCH --gres=gpu:volta:2          # Request 2 V100 GPUs per node
 #SBATCH --cpus-per-task=8           # CPU cores per task

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=grpo-distributed
-#SBATCH --output=slurm-grpo-dist-%j.out
-#SBATCH --error=slurm-grpo-dist-%j.err
+#SBATCH --output=logs/job_%j_%x/slurm-grpo-dist-%j.out
+#SBATCH --error=logs/job_%j_%x/slurm-grpo-dist-%j.err
 #SBATCH --nodes=4                    # Number of nodes (adjust as needed: 1-4)
 #SBATCH --ntasks-per-node=2         # Number of GPUs per node (2 V100s per node)
 #SBATCH --gres=gpu:volta:2          # Request 2 V100 GPUs per node

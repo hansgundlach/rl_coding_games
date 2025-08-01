@@ -1,0 +1,61 @@
+# SPIRAL Code Generation Game Configuration
+# Self-play training where one player generates code and the other guesses the output
+
+# Model configuration
+model:
+  id: "Qwen/Qwen2.5-1.5B"
+  cache_dir: "./model_cache"
+
+# LoRA configuration for efficient training
+lora:
+  task_type: "CAUSAL_LM"
+  r: 16
+  lora_alpha: 32
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+# Game-specific settings
+game:
+  timeout: 3  # Code execution timeout in seconds
+
+# Training parameters
+training:
+  num_steps: 100
+  learning_rate: 0.00002
+  rae_alpha: 0.95  # Role-conditioned advantage estimation decay rate
+  gradient_clip_norm: 1.0
+  games_per_step_v100: 2      # Conservative for V100 memory constraints
+  games_per_step_other: 4     # Standard for A100+ GPUs
+  save_interval: 20           # Save checkpoint every N steps
+  checkpoint_dir: "checkpoints/spiral_code_game"
+
+# Evaluation configuration
+evaluation:
+  enabled: true
+  enabled_initial: true       # Run evaluation before training
+  enabled_final: true         # Run evaluation after training  
+  enabled_interval: true      # Run evaluation during training
+  eval_interval_steps: 20     # Run evaluation every N steps
+  
+  # MBPP evaluation settings
+  num_questions: 5            # Reduced for faster evaluation during training
+  dataset_path: null          # Auto-detect MBPP dataset location
+  results_dir: "./eval_results/spiral_code_game"
+  temperature: 0.2
+  max_new_tokens: 256
+  timeout_seconds: 10
+
+# Weights & Biases configuration  
+wandb:
+  enabled: true
+  project_name_prefix: "spiral-code-game"
+
+# vLLM configuration (optional, for faster inference)
+vllm:
+  enabled: false              # Disabled by default
+  gpu_memory_utilization: 0.85
+  max_model_len: 2048
+  trust_remote_code: true
+  
+  integration:
+    use_for_grpo_completions: false
+    log_performance_comparison: true

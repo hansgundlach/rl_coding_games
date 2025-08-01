@@ -807,18 +807,11 @@ for step in range(num_steps):
         if WANDB_ENABLED and wandb.run and "pass_rate" in interval_results:
             wandb.log(
                 {
-                    f"mbpp_eval/step_{step + 1}_pass_rate": interval_results[
-                        "pass_rate"
-                    ],
-                    f"mbpp_eval/step_{step + 1}_problems_passed": interval_results[
-                        "problems_passed"
-                    ],
-                    f"mbpp_eval/step_{step + 1}_total_problems": interval_results[
-                        "total_problems"
-                    ],
-                    f"mbpp_eval/step_{step + 1}_eval_time": interval_results[
-                        "eval_time_seconds"
-                    ],
+                    "mbpp_eval/pass_rate": interval_results["pass_rate"],
+                    "mbpp_eval/problems_passed": interval_results["problems_passed"],
+                    "mbpp_eval/total_problems": interval_results["total_problems"],
+                    "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
+                    "step": step + 1,
                 }
             )
 

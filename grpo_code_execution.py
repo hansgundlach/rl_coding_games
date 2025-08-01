@@ -893,10 +893,11 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
     ):  # Only log if W&B is enabled and evaluation ran successfully
         wandb.log(
             {
-                "mbpp_eval/initial_pass_rate": initial_results["pass_rate"],
-                "mbpp_eval/initial_problems_passed": initial_results["problems_passed"],
-                "mbpp_eval/initial_total_problems": initial_results["total_problems"],
-                "mbpp_eval/initial_eval_time": initial_results["eval_time_seconds"],
+                "mbpp_eval/pass_rate": initial_results["pass_rate"],
+                "mbpp_eval/problems_passed": initial_results["problems_passed"],
+                "mbpp_eval/total_problems": initial_results["total_problems"],
+                "mbpp_eval/eval_time": initial_results["eval_time_seconds"],
+                "step": 0,
             }
         )
 
@@ -992,10 +993,11 @@ if (
     ):  # Only log if W&B is enabled and evaluation ran successfully
         wandb.log(
             {
-                "mbpp_eval/final_pass_rate": final_results["pass_rate"],
-                "mbpp_eval/final_problems_passed": final_results["problems_passed"],
-                "mbpp_eval/final_total_problems": final_results["total_problems"],
-                "mbpp_eval/final_eval_time": final_results["eval_time_seconds"],
+                "mbpp_eval/pass_rate": final_results["pass_rate"],
+                "mbpp_eval/problems_passed": final_results["problems_passed"],
+                "mbpp_eval/total_problems": final_results["total_problems"],
+                "mbpp_eval/eval_time": final_results["eval_time_seconds"],
+                "step": trainer.state.global_step,
             }
         )
 
