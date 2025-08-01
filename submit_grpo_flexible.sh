@@ -45,6 +45,10 @@ export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=12355
 export NCCL_DEBUG=INFO  # Enable NCCL debugging
 
+# MIT Supercloud specific: Set NCCL network interface for high-speed interconnect
+# This is critical for multi-node communication on HPC clusters.
+export NCCL_SOCKET_IFNAME=ib0
+
 echo "🌐 Distributed Setup:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
 echo "   - MASTER_ADDR: $MASTER_ADDR"

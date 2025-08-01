@@ -74,9 +74,7 @@ def setup_distributed():
                     init_method="env://",  # Use environment variables
                     rank=rank,
                     world_size=world_size,
-                    timeout=datetime.timedelta(
-                        minutes=30
-                    ),  # Increased timeout to 30 mins
+                    timeout=datetime.timedelta(minutes=5)  # Reduced timeout to 5 mins
                 )
                 print(f"✅ Distributed process group initialized successfully")
             except Exception as e:
