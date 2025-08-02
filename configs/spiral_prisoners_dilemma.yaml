@@ -15,8 +15,8 @@ lora:
 
 # Game-specific settings
 game:
-  timeout: 5  # Code execution timeout in seconds per strategy call
-  num_rounds: 100  # Number of rounds in each prisoner's dilemma game
+  timeout: 3  # Code execution timeout in seconds per strategy call
+  num_rounds: 10  # Number of rounds in each prisoner's dilemma game
   payoff_matrix:
     # Payoff matrix: (my_action, opponent_action): (my_payoff, opponent_payoff)
     cooperate_cooperate: [3, 3]
@@ -49,10 +49,10 @@ evaluation:
   enabled_initial: true       # Run evaluation before training
   enabled_final: true         # Run evaluation after training  
   enabled_interval: true      # Run evaluation during training
-  eval_interval_steps: 20     # Run evaluation every N steps
+  eval_interval_steps: 10     # Run evaluation every N steps
   
   # MBPP evaluation settings (for general coding ability)
-  num_questions: 5            # Reduced for faster evaluation during training
+  num_questions: 20            # Reduced for faster evaluation during training
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_prisoners_dilemma"
   temperature: 0.2

@@ -98,9 +98,19 @@ def apply_config_overrides(config, override_args):
         # Apply override to config using dot notation
         keys = key.split(".")
         current = config
-        for k in keys[:-1]:
+
+        # Validate that the config path exists (except for the final key)
+        for i, k in enumerate(keys[:-1]):
             if k not in current:
-                current[k] = {}
+                print(f"❌ ERROR: Invalid config override path '{key}'")
+                print(f"   Key '{k}' does not exist in config at level {i+1}")
+                print(f"   Available keys at this level: {list(current.keys())}")
+                print(f"   Did you mean one of these?")
+                for available_key in current.keys():
+                    if isinstance(current[available_key], dict):
+                        for sub_key in current[available_key].keys():
+                            print(f"     --{available_key}.{sub_key}")
+                raise ValueError(f"Invalid config override path: {key}")
             current = current[k]
 
         old_value = current.get(keys[-1], "NOT_SET")
