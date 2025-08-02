@@ -13,6 +13,10 @@ Key Features:
 - Extensible game framework for other strategy games
 """
 
+# Set environment variable to avoid tokenizers warning
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import torch
 import torch.nn.functional as F
 from datasets import Dataset
