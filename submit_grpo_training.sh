@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=grpo_code_exec
-#SBATCH --output=logs/job_%j_%x/slurm-grpo-%j.out
-#SBATCH --error=logs/job_%j_%x/slurm-grpo-%j.err
+#SBATCH --output=logs/grpo_code_execute_job_%j_%x/slurm-grpo-%j.out
+#SBATCH --error=logs/grpo_code_execute_job_%j_%x/slurm-grpo-%j.err
 #SBATCH --partition=xeon-g6-volta
 #SBATCH --gres=gpu:volta:1
 #SBATCH --nodes=1
@@ -69,7 +69,7 @@ export WANDB_MODE=offline
 
 # Set up logs directory with job-specific subfolder
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-JOB_LOG_DIR="logs/job_${SLURM_JOB_ID}_${TIMESTAMP}"
+JOB_LOG_DIR="logs/grpo_code_execute_job_${SLURM_JOB_ID}_${TIMESTAMP}"
 mkdir -p "$JOB_LOG_DIR"
 echo "📁 Created job log directory: $JOB_LOG_DIR"
 
