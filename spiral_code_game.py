@@ -773,38 +773,9 @@ def compute_policy_gradient_loss(
 cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
-# Load model following existing pattern
-if offline_mode:
-    cached_models = glob.glob(os.path.join(cache_dir, "models--Qwen--Qwen2.5-*"))
-
-    preferred_model = None
-    fallback_model = None
-
-    for cached_model_path in cached_models:
-        model_name = (
-            os.path.basename(cached_model_path)
-            .replace("models--", "")
-            .replace("--", "/")
-        )
-        if "1.5B" in model_name:
-            preferred_model = model_name
-            break
-        elif "3B" in model_name:
-            fallback_model = model_name
-
-    if preferred_model:
-        model_id = preferred_model
-        print(f"🎯 Using preferred cached model: {model_id} (better memory efficiency)")
-    elif fallback_model:
-        model_id = fallback_model
-        print(
-            f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)"
-        )
-    else:
-        model_id = config["model"]["id"]
-        print(f"⚠️  No cached models found, attempting: {model_id}")
-else:
-    model_id = config["model"]["id"]
+# Use exactly the model specified in config
+model_id = config["model"]["id"]
+print(f"📥 Using model from config: {model_id}")
 
 print(f"📥 Loading model for SPIRAL code game: {model_id}")
 

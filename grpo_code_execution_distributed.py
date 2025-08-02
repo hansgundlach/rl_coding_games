@@ -39,11 +39,23 @@ print(f"📊 Memory usage: {os.getpid()} - check with ps aux | grep {os.getpid()
 
 # Check all SLURM and distributed environment variables
 print(f"\n🔍 COMPLETE ENVIRONMENT DUMP:")
-dist_env_vars = ['WORLD_SIZE', 'RANK', 'LOCAL_RANK', 'MASTER_ADDR', 'MASTER_PORT', 
-                 'SLURM_PROCID', 'SLURM_LOCALID', 'SLURM_NODEID', 'SLURM_NTASKS',
-                 'SLURM_NNODES', 'SLURM_JOB_ID', 'CUDA_VISIBLE_DEVICES', 'NCCL_DEBUG']
+dist_env_vars = [
+    "WORLD_SIZE",
+    "RANK",
+    "LOCAL_RANK",
+    "MASTER_ADDR",
+    "MASTER_PORT",
+    "SLURM_PROCID",
+    "SLURM_LOCALID",
+    "SLURM_NODEID",
+    "SLURM_NTASKS",
+    "SLURM_NNODES",
+    "SLURM_JOB_ID",
+    "CUDA_VISIBLE_DEVICES",
+    "NCCL_DEBUG",
+]
 for var in dist_env_vars:
-    value = os.environ.get(var, 'NOT_SET')
+    value = os.environ.get(var, "NOT_SET")
     print(f"   {var}: {value}")
 
 # Test basic PyTorch functionality
@@ -63,6 +75,7 @@ except Exception as e:
     print(f"   ❌ Error checking PyTorch: {e}")
 
 print(f"{'='*60}\n")
+
 
 # Initialize distributed training if available
 def setup_distributed():
@@ -106,10 +119,12 @@ def setup_distributed():
                 print(
                     f"🔄 Process {rank}: Attempting to initialize distributed training..."
                 )
-                print(f"🔍 Pre-init check - backend: {'nccl' if torch.cuda.is_available() else 'gloo'}")
+                print(
+                    f"🔍 Pre-init check - backend: {'nccl' if torch.cuda.is_available() else 'gloo'}"
+                )
                 print(f"🔍 Pre-init check - init_method: env://")
                 print(f"🔍 Pre-init check - rank: {rank}, world_size: {world_size}")
-                
+
                 # Test basic distributed functionality before full init
                 if torch.cuda.is_available():
                     try:
@@ -118,22 +133,26 @@ def setup_distributed():
                         print(f"🎮 Current CUDA device before init: {current_device}")
                     except Exception as e:
                         print(f"⚠️ Warning: Could not get current CUDA device: {e}")
-                        
+
                 # Initialize distributed training with explicit parameters
                 start_time = datetime.datetime.now()
                 print(f"🔄 Starting dist.init_process_group at {start_time}...")
-                
+
                 dist.init_process_group(
                     backend="nccl" if torch.cuda.is_available() else "gloo",
                     init_method="env://",  # Use environment variables
                     rank=rank,
                     world_size=world_size,
-                    timeout=datetime.timedelta(minutes=10),  # Increase timeout for debugging
+                    timeout=datetime.timedelta(
+                        minutes=10
+                    ),  # Increase timeout for debugging
                 )
-                
+
                 end_time = datetime.datetime.now()
                 init_duration = (end_time - start_time).total_seconds()
-                print(f"✅ Process {rank}: Distributed process group initialized successfully in {init_duration:.2f} seconds")
+                print(
+                    f"✅ Process {rank}: Distributed process group initialized successfully in {init_duration:.2f} seconds"
+                )
                 print(f"🌐 Process {rank}: Connected to {world_size} total processes")
             except Exception as e:
                 print(f"❌ Failed to initialize distributed training: {e}")
@@ -182,8 +201,10 @@ def setup_distributed():
 
 # Create a checkpoint file to track process progress
 checkpoint_file = f"/tmp/grpo_process_checkpoint_{os.environ.get('SLURM_JOB_ID', 'unknown')}_{os.getpid()}.txt"
-with open(checkpoint_file, 'w') as f:
-    f.write(f"Process {os.getpid()} reached setup_distributed at {datetime.datetime.now()}\n")
+with open(checkpoint_file, "w") as f:
+    f.write(
+        f"Process {os.getpid()} reached setup_distributed at {datetime.datetime.now()}\n"
+    )
 
 print(f"📄 Created checkpoint file: {checkpoint_file}")
 print(f"🔄 About to call setup_distributed()...")
@@ -191,12 +212,18 @@ print(f"🔄 About to call setup_distributed()...")
 # Setup distributed training
 try:
     dist_info = setup_distributed()
-    with open(checkpoint_file, 'a') as f:
-        f.write(f"Process {os.getpid()} completed setup_distributed successfully at {datetime.datetime.now()}\n")
-    print(f"✅ setup_distributed() completed successfully for process {dist_info['rank']}")
+    with open(checkpoint_file, "a") as f:
+        f.write(
+            f"Process {os.getpid()} completed setup_distributed successfully at {datetime.datetime.now()}\n"
+        )
+    print(
+        f"✅ setup_distributed() completed successfully for process {dist_info['rank']}"
+    )
 except Exception as e:
-    with open(checkpoint_file, 'a') as f:
-        f.write(f"Process {os.getpid()} FAILED setup_distributed at {datetime.datetime.now()}: {str(e)}\n")
+    with open(checkpoint_file, "a") as f:
+        f.write(
+            f"Process {os.getpid()} FAILED setup_distributed at {datetime.datetime.now()}: {str(e)}\n"
+        )
     print(f"❌ setup_distributed() FAILED: {e}")
     raise
 
@@ -526,40 +553,9 @@ print(f"Created dataset: {dataset}")
 cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
-# Load the main model (trainable) - prefer 1.5B for better memory efficiency
-if offline_mode:
-    # Check what models are available in cache, prefer 1.5B over 3B for memory efficiency
-    cached_models = glob.glob(os.path.join(cache_dir, "models--Qwen--Qwen2.5-*"))
-
-    # Prefer 1.5B model if available (better memory efficiency)
-    preferred_model = None
-    fallback_model = None
-
-    for cached_model_path in cached_models:
-        model_name = (
-            os.path.basename(cached_model_path)
-            .replace("models--", "")
-            .replace("--", "/")
-        )
-        if "1.5B" in model_name:
-            preferred_model = model_name
-            break
-        elif "3B" in model_name:
-            fallback_model = model_name
-
-    if preferred_model:
-        model_id = preferred_model
-        print(f"🎯 Using preferred cached model: {model_id} (better memory efficiency)")
-    elif fallback_model:
-        model_id = fallback_model
-        print(
-            f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)"
-        )
-    else:
-        model_id = "Qwen/Qwen2.5-1.5B"  # fallback
-        print(f"⚠️  No cached models found, attempting: {model_id}")
-else:
-    model_id = config["model"]["id"]  # Use configured model
+# Use exactly the model specified in config
+model_id = config["model"]["id"]
+print(f"📥 Using model from config: {model_id}")
 
 print(f"📥 Loading trainable model: {model_id}")
 print("⏳ This may take 2-3 minutes depending on model size and storage speed...")

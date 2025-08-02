@@ -9,12 +9,13 @@ whether to cooperate or defect based on game history.
 Key Features:
 - LLMs submit code strategies, not direct actions
 - Reward based on tournament wins/losses
-- -1 reward for code execution failures  
+- -1 reward for code execution failures
 - Extensible game framework for other strategy games
 """
 
 # Set environment variable to avoid tokenizers warning
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import torch
@@ -56,15 +57,16 @@ print(f"📝 Loading configuration from: {args.config}")
 with open(args.config, "r") as f:
     config = yaml.safe_load(f)
 
+
 # Apply config overrides from command line
 def apply_config_overrides(config, override_args):
     """Apply command line config overrides to loaded config."""
     overrides_applied = []
-    
+
     i = 0
     while i < len(override_args):
         arg = override_args[i]
-        
+
         # Handle --key=value format
         if "=" in arg:
             key, value = arg.split("=", 1)
@@ -77,7 +79,7 @@ def apply_config_overrides(config, override_args):
         else:
             i += 1
             continue
-            
+
         # Convert value to appropriate type
         if value.lower() == "true":
             value = True
@@ -92,7 +94,7 @@ def apply_config_overrides(config, override_args):
             .isdigit()
         ):
             value = float(value)
-            
+
         # Apply override to config using dot notation
         keys = key.split(".")
         current = config
@@ -100,25 +102,27 @@ def apply_config_overrides(config, override_args):
             if k not in current:
                 current[k] = {}
             current = current[k]
-        
+
         old_value = current.get(keys[-1], "NOT_SET")
         current[keys[-1]] = value
         overrides_applied.append(f"{key}: {old_value} -> {value}")
-        
+
         i += 1
-    
+
     if overrides_applied:
         print("🔧 Applied config overrides:")
         for override in overrides_applied:
             print(f"   {override}")
-    
+
     return config
+
 
 # Apply any config overrides
 config = apply_config_overrides(config, unknown_args)
 
 # Extract config values for easy access
 WANDB_ENABLED = config["wandb"]["enabled"]
+
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
@@ -181,6 +185,7 @@ def detect_platform_and_gpu():
         "platform": platform,
         "offline_reason": offline_reason,
     }
+
 
 # Auto-detect platform and capabilities
 print("🔧 Running platform detection...")
@@ -287,14 +292,16 @@ else:
         f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
     )
 
+
 @dataclass
 class StrategyGameTrajectory:
     """Store trajectory data for a single strategy game."""
-    
+
     player1_data: Dict  # Player 1's submission and trajectory
-    player2_data: Dict  # Player 2's submission and trajectory  
+    player2_data: Dict  # Player 2's submission and trajectory
     game_outcome: Dict  # Final results and rewards
-    game_result: Any    # Full game result from the environment
+    game_result: Any  # Full game result from the environment
+
 
 class RoleConditionedAdvantageEstimation:
     """
@@ -332,19 +339,20 @@ class RoleConditionedAdvantageEstimation:
             "updates_player2": self.update_counts["player2"],
         }
 
+
 def play_strategy_game(model, tokenizer, device, game_env) -> StrategyGameTrajectory:
     """
     Play a single strategy game between two instances of the same model.
-    
+
     Returns complete trajectory data for training.
     """
     # Generate strategy code for both players
     player_submissions = []
-    
+
     for player_id in [0, 1]:
         # Get prompt for this player
         prompt = game_env.get_player_prompt(player_id, "player")
-        
+
         # Generate response
         inputs = tokenizer(
             prompt, return_tensors="pt", truncation=True, max_length=1024
@@ -374,8 +382,10 @@ def play_strategy_game(model, tokenizer, device, game_env) -> StrategyGameTrajec
 
         # Extract and validate code
         extracted_code = game_env.extract_code_from_response(response)
-        is_valid, error_msg = game_env.validate_submission(extracted_code, player_id, "player")
-        
+        is_valid, error_msg = game_env.validate_submission(
+            extracted_code, player_id, "player"
+        )
+
         # Create player submission
         submission = PlayerSubmission(
             player_id=player_id,
@@ -384,13 +394,13 @@ def play_strategy_game(model, tokenizer, device, game_env) -> StrategyGameTrajec
             response=response,
             extracted_code=extracted_code,
             compilation_success=is_valid,
-            compilation_error=error_msg
+            compilation_error=error_msg,
         )
         player_submissions.append(submission)
 
     # Play the game
     game_result = game_env.play_game(player_submissions)
-    
+
     return StrategyGameTrajectory(
         player1_data={
             "prompt": player_submissions[0].prompt,
@@ -415,6 +425,7 @@ def play_strategy_game(model, tokenizer, device, game_env) -> StrategyGameTrajec
         },
         game_result=game_result,
     )
+
 
 def compute_policy_gradient_loss(
     model,
@@ -462,9 +473,7 @@ def compute_policy_gradient_loss(
 
             if device.type == "cuda":
                 inputs = {k: v.to(device) for k, v in inputs.items()}
-                response_tokens = {
-                    k: v.to(device) for k, v in response_tokens.items()
-                }
+                response_tokens = {k: v.to(device) for k, v in response_tokens.items()}
 
             # Skip if response is too short
             if response_tokens["input_ids"].shape[1] == 0:
@@ -519,44 +528,14 @@ def compute_policy_gradient_loss(
 
     return total_loss / max(num_updates, 1)
 
+
 # Set up model cache directory
 cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
-# Load model following existing pattern
-if offline_mode:
-    cached_models = glob.glob(os.path.join(cache_dir, "models--Qwen--Qwen2.5-*"))
-
-    preferred_model = None
-    fallback_model = None
-
-    for cached_model_path in cached_models:
-        model_name = (
-            os.path.basename(cached_model_path)
-            .replace("models--", "")
-            .replace("--", "/")
-        )
-        if "1.5B" in model_name:
-            preferred_model = model_name
-            break
-        elif "3B" in model_name:
-            fallback_model = model_name
-
-    if preferred_model:
-        model_id = preferred_model
-        print(f"🎯 Using preferred cached model: {model_id} (better memory efficiency)")
-    elif fallback_model:
-        model_id = fallback_model
-        print(
-            f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)"
-        )
-    else:
-        model_id = config["model"]["id"]
-        print(f"⚠️  No cached models found, attempting: {model_id}")
-else:
-    model_id = config["model"]["id"]
-
-print(f"📥 Loading model for SPIRAL prisoner's dilemma: {model_id}")
+# Use exactly the model specified in config
+model_id = config["model"]["id"]
+print(f"📥 Using model from config: {model_id}")
 
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
@@ -591,7 +570,9 @@ print(f"Model device: {device}")
 
 # Initialize game environment
 game_env = IteratedPrisonersDilemma(config["game"])
-print(f"🎮 Initialized {game_env.get_game_name()} with {config['game']['num_rounds']} rounds")
+print(
+    f"🎮 Initialized {game_env.get_game_name()} with {config['game']['num_rounds']} rounds"
+)
 
 # Initialize SPIRAL components
 rae = RoleConditionedAdvantageEstimation(alpha=config["training"]["rae_alpha"])
@@ -659,7 +640,7 @@ for step in range(num_steps):
         # Track statistics
         p1_reward = trajectory.game_outcome["player1_reward"]
         p2_reward = trajectory.game_outcome["player2_reward"]
-        
+
         if p1_reward > p2_reward:
             player1_wins += 1
         elif p2_reward > p1_reward:
@@ -677,28 +658,37 @@ for step in range(num_steps):
             print(f"\n{'='*60}")
             print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
             print(f"{'='*60}")
-            
+
             # Show player strategies (truncated)
             print("🤖 Player 1 Strategy:")
             print(f"   Code: {trajectory.player1_data['code'][:100]}...")
-            print(f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}")
-            if not trajectory.player1_data['compilation_success']:
+            print(
+                f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}"
+            )
+            if not trajectory.player1_data["compilation_success"]:
                 print(f"   Error: {trajectory.player1_data['compilation_error']}")
-            
-            print("🤖 Player 2 Strategy:")  
+
+            print("🤖 Player 2 Strategy:")
             print(f"   Code: {trajectory.player2_data['code'][:100]}...")
-            print(f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}")
-            if not trajectory.player2_data['compilation_success']:
+            print(
+                f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
+            )
+            if not trajectory.player2_data["compilation_success"]:
                 print(f"   Error: {trajectory.player2_data['compilation_error']}")
-            
+
             # Show game results
-            if hasattr(trajectory.game_result, 'game_data') and 'final_payoffs' in trajectory.game_result.game_data:
-                payoffs = trajectory.game_result.game_data['final_payoffs']
+            if (
+                hasattr(trajectory.game_result, "game_data")
+                and "final_payoffs" in trajectory.game_result.game_data
+            ):
+                payoffs = trajectory.game_result.game_data["final_payoffs"]
                 print(f"\n🏆 Final Scores:")
                 print(f"   Player 1: {payoffs.get(0, 'N/A')} points")
                 print(f"   Player 2: {payoffs.get(1, 'N/A')} points")
-                print(f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}")
-            
+                print(
+                    f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}"
+                )
+
             print(f"\n🎯 Rewards:")
             print(f"   Player 1: {p1_reward:+.1f}")
             print(f"   Player 2: {p2_reward:+.1f}")
@@ -731,7 +721,9 @@ for step in range(num_steps):
     }
 
     print(f"📊 Loss: {loss.item():.4f}")
-    print(f"🏆 Player 1 wins: {player1_wins}, Player 2 wins: {player2_wins}, Ties: {ties}")
+    print(
+        f"🏆 Player 1 wins: {player1_wins}, Player 2 wins: {player2_wins}, Ties: {ties}"
+    )
     print(f"💻 Success rate: {success_rate:.2%}")
     print(f"❌ Execution failures: {execution_failures}")
     print(

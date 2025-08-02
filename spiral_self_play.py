@@ -51,58 +51,65 @@ print(f"📝 Loading configuration from: {args.config}")
 with open(args.config, "r") as f:
     config = yaml.safe_load(f)
 
+
 # Apply config overrides from command line
 def apply_config_overrides(config, override_args):
     """Apply command line config overrides to loaded config."""
     overrides_applied = []
-    
+
     i = 0
     while i < len(override_args):
         arg = override_args[i]
-        
+
         # Handle --key=value format
-        if '=' in arg:
-            key, value = arg.split('=', 1)
-            key = key.lstrip('-')
-        # Handle --key value format  
-        elif arg.startswith('--') and i + 1 < len(override_args):
-            key = arg.lstrip('-')
+        if "=" in arg:
+            key, value = arg.split("=", 1)
+            key = key.lstrip("-")
+        # Handle --key value format
+        elif arg.startswith("--") and i + 1 < len(override_args):
+            key = arg.lstrip("-")
             value = override_args[i + 1]
             i += 1  # Skip next arg since we used it as value
         else:
             i += 1
             continue
-            
+
         # Convert value to appropriate type
-        if value.lower() == 'true':
+        if value.lower() == "true":
             value = True
-        elif value.lower() == 'false':
+        elif value.lower() == "false":
             value = False
         elif value.isdigit():
             value = int(value)
-        elif value.replace('.', '', 1).replace('e-', '', 1).replace('e+', '', 1).isdigit():
+        elif (
+            value.replace(".", "", 1)
+            .replace("e-", "", 1)
+            .replace("e+", "", 1)
+            .isdigit()
+        ):
             value = float(value)
-            
+
         # Apply override to config using dot notation
-        keys = key.split('.')
+        keys = key.split(".")
         current = config
         for k in keys[:-1]:
             if k not in current:
                 current[k] = {}
             current = current[k]
-        
-        old_value = current.get(keys[-1], 'NOT_SET')
+
+        old_value = current.get(keys[-1], "NOT_SET")
         current[keys[-1]] = value
         overrides_applied.append(f"{key}: {old_value} -> {value}")
-        
+
         i += 1
-    
+
     if overrides_applied:
         print("🔧 Applied config overrides:")
         for override in overrides_applied:
             print(f"   {override}")
-    
+
     return config
+
 
 # Apply any config overrides
 config = apply_config_overrides(config, unknown_args)
@@ -669,38 +676,9 @@ def compute_policy_gradient_loss(
 cache_dir = config["model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
-# Load model following existing pattern
-if offline_mode:
-    cached_models = glob.glob(os.path.join(cache_dir, "models--Qwen--Qwen2.5-*"))
-
-    preferred_model = None
-    fallback_model = None
-
-    for cached_model_path in cached_models:
-        model_name = (
-            os.path.basename(cached_model_path)
-            .replace("models--", "")
-            .replace("--", "/")
-        )
-        if "1.5B" in model_name:
-            preferred_model = model_name
-            break
-        elif "3B" in model_name:
-            fallback_model = model_name
-
-    if preferred_model:
-        model_id = preferred_model
-        print(f"🎯 Using preferred cached model: {model_id} (better memory efficiency)")
-    elif fallback_model:
-        model_id = fallback_model
-        print(
-            f"🔄 Using fallback cached model: {model_id} (will use aggressive memory settings)"
-        )
-    else:
-        model_id = config["model"]["id"]
-        print(f"⚠️  No cached models found, attempting: {model_id}")
-else:
-    model_id = config["model"]["id"]
+# Use exactly the model specified in config
+model_id = config["model"]["id"]
+print(f"📥 Using model from config: {model_id}")
 
 print(f"📥 Loading model for SPIRAL self-play: {model_id}")
 
