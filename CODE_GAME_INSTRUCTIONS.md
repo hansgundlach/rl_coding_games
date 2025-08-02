@@ -2,10 +2,10 @@
 
 ## Overview
 
-
 ## Quick Start
 
 ### 1. Prerequisites
+
 - CUDA-compatible GPU (recommended)
 - Python 3.10+
 - Virtual environment activated
@@ -15,6 +15,7 @@
 #### MIT Supercloud (V100, No Internet) - RECOMMENDED SETUP
 
 **Step 1: Request Interactive Session**
+
 ```bash
 # Request GPU node with adequate resources for training
 LLsub -i -s 4 -g volta:1 -R "rusage[mem=64000]" -W 4:00
@@ -24,6 +25,7 @@ ssh your-assigned-node-name
 ```
 
 **Step 2: Set Up Environment**
+
 ```bash
 # Navigate to your project directory
 cd /home/gridsan/yourusername/game_project_rl
@@ -39,12 +41,14 @@ nvidia-smi
 ```
 
 **Step 3: Run Training**
+
 ```bash
 # Just run - auto-detects Supercloud and uses cached models!
 python grpo_code_game.py
 ```
 
 **Expected Supercloud Output:**
+
 ```
 🔍 Auto-detected: Supercloud platform
 🎮 GPU: V100, BF16 support: False
@@ -57,12 +61,14 @@ Starting GRPO training...
 ```
 
 **Supercloud Resource Requirements:**
+
 - **GPU**: 1x Tesla V100 (32GB VRAM)
 - **CPU**: 4 cores recommended
 - **Memory**: 64GB RAM recommended
 - **Time**: 4+ hours for full training
 
 **Memory Settings (V100 + Qwen2.5-1.5B):**
+
 - `batch_size=4` (moderate memory usage)
 - `gradient_accumulation_steps=2`
 - `max_prompt_length=256`
@@ -84,6 +90,7 @@ python grpo_code_game.py
 ```
 
 **Expected Lambda Output:**
+
 ```
 🔍 Auto-detected: Lambda platform
 🎮 GPU: A100, BF16 support: True
@@ -107,7 +114,9 @@ The system **automatically detects** your platform and configures itself:
 **No environment variables needed - just run `python grpo_code_game.py`!**
 
 ### 2.1. Configure API Keys
+
 Create or edit the `.env` file in the project root:
+
 ```bash
 # .env
 WANDB_API_KEY=your_wandb_api_key_here
@@ -120,6 +129,7 @@ WANDB_API_KEY=your_wandb_api_key_here
 **Important**: Never commit the `.env` file to version control!
 
 ### 3. Run the Code Generation Game
+
 ```bash
 # Simple run (uses default settings)
 python grpo_code_game.py
@@ -128,26 +138,30 @@ python grpo_code_game.py
 ## How It Works
 
 ### Game Mechanics
-1. **Trainable Model**: SmolLM-135M-Instruct with LoRA fine-tuning (3.5% trainable params)
-2. **Static Opponent**: Same SmolLM-135M model (frozen) that tries to guess outputs
+
 3. **Task**: Generate Python code that returns an integer, formatted like:
+
    ```
    ```python
    def tricky():
        return int('0b1011', 2)
    print(tricky())
    ```
+
    ```output
    11
    ```
+
    ```
 
 ### Reward System
+
 - **+1 reward**: Static opponent guesses the output incorrectly
 - **-1 reward**: Static opponent guesses the output correctly
 - **Goal**: Learn to write increasingly tricky code that fools the opponent
 
 ### Training Process
+
 1. Model generates code completion
 2. Code is executed to get true output
 3. Static opponent tries to predict the output
@@ -157,6 +171,7 @@ python grpo_code_game.py
 ## Expected Training Output
 
 ### Initial Setup
+
 ```
 Created dataset: Dataset({
     features: ['prompt'],
@@ -170,7 +185,9 @@ Starting GRPO training...
 ```
 
 ### During Training
+
 You'll see debug output for the first few examples:
+
 ```
 ==================================================
 Model prediction: 42
@@ -183,6 +200,7 @@ def simple():
     return 42
 print(simple())
 ```
+
 ```output
 42
 ```...
@@ -190,6 +208,7 @@ print(simple())
 ```
 
 ### Training Progress
+
 - **Training steps**: 500 total (1000 samples / batch_size=8 * num_generations=8)
 - **Time per step**: ~45-50 seconds initially
 - **Total training time**: ~6-7 hours for full run
@@ -215,13 +234,16 @@ python grpo_code_game.py
 ```
 
 ### Local Checkpoints
+
 Saved to: `checkpoints/grpo_code/`
+
 - Periodic model checkpoints
 - Final trained model
 
 ## Configuration Options
 
 ### Model Settings
+
 ```python
 # In grpo_code_game.py, modify these variables:
 model_id = "HuggingFaceTB/SmolLM-135M-Instruct"  # Change model size
@@ -232,6 +254,7 @@ lora_config = LoraConfig(
 ```
 
 ### Training Settings
+
 ```python
 training_args = GRPOConfig(
     output_dir="checkpoints/grpo_code",
@@ -246,6 +269,7 @@ training_args = GRPOConfig(
 ```
 
 ### Dataset Settings
+
 ```python
 # Number of training prompts
 dataset = Dataset.from_dict({
@@ -258,12 +282,14 @@ dataset = Dataset.from_dict({
 ### Common Issues
 
 1. **CUDA Out of Memory**
+
    ```bash
    # Reduce batch size
    per_device_train_batch_size=4  # or 2, 1
    ```
 
 2. **Model Loading Errors**
+
    ```bash
    # Check model cache
    ls model_cache/
@@ -272,6 +298,7 @@ dataset = Dataset.from_dict({
    ```
 
 3. **W&B Authentication**
+
    ```bash
    # Check login status
    wandb status
@@ -280,6 +307,7 @@ dataset = Dataset.from_dict({
    ```
 
 4. **Import Errors**
+
    ```bash
    # Verify environment
    source venv/bin/activate
@@ -306,12 +334,15 @@ dataset = Dataset.from_dict({
 ## Expected Results
 
 ### Training Progression
+
 - **Early**: Simple code, often guessed correctly (negative rewards)
 - **Mid-training**: More complex patterns emerge
 - **Late**: Sophisticated tricks that fool the opponent (positive rewards)
 
 ### Sample Evolved Code
+
 The model should learn to generate increasingly sophisticated code:
+
 ```python
 # Early training - simple
 def f(): return 42
@@ -340,6 +371,7 @@ def f(): return sum(ord(c) for c in "AI") % 100
    - Human evaluation of creativity
 
 ## File Structure
+
 ```
 game_project_rl/
 ├── grpo_code_game.py           # Main training script
@@ -356,6 +388,7 @@ game_project_rl/
 ## Support
 
 For issues:
+
 1. Check the troubleshooting section above
 2. Examine W&B logs for training insights
 3. Verify GPU memory usage with `nvidia-smi`
