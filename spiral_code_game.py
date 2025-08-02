@@ -362,7 +362,7 @@ def safe_execute_code(code: str, timeout: int = 5) -> dict:
 class CodeGameTrajectory:
     """Store trajectory data for a single code generation game."""
 
-    generator_data: Dict  # Player 1 (generates code)
+    generator_data: Dict  # Player 1 (generates code + predicts output)
     guesser_data: Dict  # Player 2 (guesses output)
     game_outcome: Dict  # Final results and rewards
     execution_result: Dict  # Code execution results
@@ -372,10 +372,11 @@ class CodeGenerationGame:
     """
     Code Generation Game implementation for SPIRAL self-play.
 
-    Rules:
-    - Player 1 generates code and knows the expected output
+    NEW Rules:
+    - Player 1 generates code AND predicts its output
     - Player 2 must guess the output without seeing the actual execution
-    - Zero-sum rewards based on execution success and guessing accuracy
+    - Player 1 wins if: code executable AND self-prediction correct AND Player 2 wrong
+    - Player 2 wins if: prediction correct
     """
 
     def __init__(self, timeout: int = 3):
@@ -387,33 +388,41 @@ class CodeGenerationGame:
         self.game_over = False
         self.execution_result = None
         self.generator_code = None
+        self.generator_prediction = None  # NEW: Player 1's prediction
         self.actual_output = None
-        self.guessed_output = None
+        self.guesser_prediction = None
 
     def get_generator_prompt(self) -> str:
-        """Get prompt for Player 1 (code generator)."""
-        return """You are Player 1 in a code generation game. Your goal is to write Python code that:
-1. Executes successfully without errors
-2. Produces some output that Player 2 will struggle to predict correctly
+        """Get prompt for Player 1 (code generator + predictor)."""
+        return """You are Player 1 in a code generation game. Your goals are to:
+1. Write Python code that executes successfully without errors
+2. Correctly predict what your code will output
+3. Write code whose output Player 2 will struggle to predict correctly
 
 Write a complete Python program that demonstrates a programming concept or solves a simple problem.
 The program should be executable and produce some output.
 
-Focus on writing clean, working code that has interesting or non-obvious output.
+Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot.
 
-Examples of good programs:
-- Mathematical calculations with specific results
-- String manipulations with precise output
-- List operations with specific final values  
-- Simple algorithms with concrete results
-- Basic data structures with specific content
 
-Format your response with just the Python code:
+
+Format your response with the Python code AND your prediction:
 ```python
 # Your code here
 ```
 
-Write a Python program:"""
+<prediction>
+[exact output your code will produce]
+</prediction>
+
+Write a Python program and predict its output:"""
+
+    # Examples of good strategies:
+    # - Mathematical calculations with specific but non-obvious results
+    # - String manipulations with precise but surprising output
+    # - List operations with specific final values that require careful tracing
+    # - Simple algorithms with concrete but non-intuitive results
+    # - Basic data structures with specific content that requires understanding the logic
 
     def get_guesser_prompt(self, generator_code: str) -> str:
         """Get prompt for Player 2 (output guesser)."""
@@ -456,8 +465,8 @@ What will this code output?"""
         if pred_match:
             return pred_match.group(1).strip()
 
-        # Fallback: return the response as-is
-        return response.strip()
+        # Fallback: return empty string if no prediction found
+        return ""
 
     def play_game(self, model, tokenizer, device) -> CodeGameTrajectory:
         """
@@ -465,7 +474,7 @@ What will this code output?"""
 
         Returns complete trajectory data for training.
         """
-        # Player 1: Generate code
+        # Player 1: Generate code AND predict output
         generator_prompt = self.get_generator_prompt()
 
         inputs = tokenizer(
@@ -480,7 +489,11 @@ What will this code output?"""
                 max_new_tokens=config["generation"]["generator_max_tokens"],
                 temperature=config["generation"]["temperature"],
                 top_p=config["generation"]["top_p"],
-                top_k=config["generation"]["top_k"] if config["generation"]["top_k"] > 0 else None,
+                top_k=(
+                    config["generation"]["top_k"]
+                    if config["generation"]["top_k"] > 0
+                    else None
+                ),
                 do_sample=config["generation"]["do_sample"],
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
@@ -491,8 +504,11 @@ What will this code output?"""
             skip_special_tokens=True,
         ).strip()
 
-        # Extract code from generator response
+        # Extract code and prediction from generator response
         self.generator_code = self.extract_code_from_response(generator_response)
+        self.generator_prediction = self.extract_prediction_from_response(
+            generator_response
+        )
 
         # Execute the generated code to get actual output
         self.execution_result = safe_execute_code(self.generator_code, self.timeout)
@@ -515,7 +531,11 @@ What will this code output?"""
                 max_new_tokens=config["generation"]["guesser_max_tokens"],
                 temperature=config["generation"]["temperature"],
                 top_p=config["generation"]["top_p"],
-                top_k=config["generation"]["top_k"] if config["generation"]["top_k"] > 0 else None,
+                top_k=(
+                    config["generation"]["top_k"]
+                    if config["generation"]["top_k"] > 0
+                    else None
+                ),
                 do_sample=config["generation"]["do_sample"],
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
@@ -526,7 +546,9 @@ What will this code output?"""
         ).strip()
 
         # Extract prediction from guesser response
-        self.guessed_output = self.extract_prediction_from_response(guesser_response)
+        self.guesser_prediction = self.extract_prediction_from_response(
+            guesser_response
+        )
 
         # Calculate rewards
         rewards = self.calculate_rewards()
@@ -536,19 +558,23 @@ What will this code output?"""
                 "prompt": generator_prompt,
                 "response": generator_response,
                 "code": self.generator_code,
+                "prediction": self.generator_prediction,  # NEW
                 "role": "generator",
             },
             guesser_data={
                 "prompt": guesser_prompt,
                 "response": guesser_response,
-                "prediction": self.guessed_output,
+                "prediction": self.guesser_prediction,
                 "role": "guesser",
             },
             game_outcome={
                 "generator_reward": rewards["generator"],
                 "guesser_reward": rewards["guesser"],
                 "code_executable": self.execution_result["success"],
-                "prediction_correct": rewards["prediction_correct"],
+                "generator_prediction_correct": rewards[
+                    "generator_prediction_correct"
+                ],  # NEW
+                "guesser_prediction_correct": rewards["guesser_prediction_correct"],
                 "actual_output": self.actual_output,
             },
             execution_result=self.execution_result,
@@ -556,31 +582,52 @@ What will this code output?"""
 
     def calculate_rewards(self) -> Dict:
         """
-        Calculate zero-sum rewards for both players.
+        Calculate rewards for both players under new rules.
 
-        Generator (Player 1): +1 if code executable AND guesser fails, -1 otherwise
-        Guesser (Player 2): +1 if prediction correct, -1 if prediction wrong
+        Player 1 (Generator): Gets positive reward if:
+        - Code is executable AND
+        - Their prediction is correct AND
+        - Player 2's prediction is wrong
+
+        Player 2 (Guesser): Gets positive reward if:
+        - Their prediction is correct
         """
         # Check if code is executable
         code_executable = self.execution_result["success"]
 
-        # Check if prediction is correct (exact match)
-        prediction_correct = (
-            self.guessed_output.strip() == self.actual_output.strip()
+        # Check prediction correctness (exact match)
+        generator_prediction_correct = (
+            self.generator_prediction.strip() == self.actual_output.strip()
             if code_executable
             else False
         )
 
-        # Generator rewards: +1 if code works AND guesser fails, -1 otherwise
-        generator_reward = 1.0 if (code_executable and not prediction_correct) else -1.0
+        guesser_prediction_correct = (
+            self.guesser_prediction.strip() == self.actual_output.strip()
+            if code_executable
+            else False
+        )
 
-        # Guesser rewards: +1 if prediction correct, -1 otherwise
-        guesser_reward = 1.0 if prediction_correct else -1.0
+        # NEW REWARD STRUCTURE:
+        # Generator: +1 if (executable AND self-correct AND guesser-wrong), -1 otherwise
+        generator_reward = (
+            1.0
+            if (
+                code_executable
+                and generator_prediction_correct
+                and not guesser_prediction_correct
+            )
+            else -1.0
+        )
+
+        # Guesser: +1 if correct prediction, -1 otherwise
+        guesser_reward = 1.0 if guesser_prediction_correct else -1.0
 
         return {
             "generator": generator_reward,
             "guesser": guesser_reward,
-            "prediction_correct": prediction_correct,
+            "generator_prediction_correct": generator_prediction_correct,
+            "guesser_prediction_correct": guesser_prediction_correct,
         }
 
 
@@ -880,7 +927,8 @@ for step in range(num_steps):
     generator_wins = 0
     guesser_wins = 0
     code_executable_count = 0
-    correct_predictions = 0
+    generator_correct_predictions = 0  # NEW
+    guesser_correct_predictions = 0  # NEW
 
     for game_idx in range(games_per_step):
         trajectory = game.play_game(model, tokenizer, device)
@@ -905,18 +953,24 @@ for step in range(num_steps):
             print(f"\n🔧 Execution Results:")
             print(f"   Success: {'✅' if exec_result['success'] else '❌'}")
             if exec_result["success"]:
-                print(f"   Output: '{trajectory.game_outcome['actual_output']}'")
+                print(f"   Actual Output: '{trajectory.game_outcome['actual_output']}'")
                 print(f"   Execution time: {exec_result['execution_time']:.3f}s")
             else:
                 print(f"   Error: {exec_result['error'][:100]}...")
                 if exec_result["timeout"]:
                     print(f"   ⏰ Timed out after {exec_result['execution_time']:.1f}s")
 
-            # Show guesser's prediction
-            print(f"\n🎯 Guesser's Prediction:")
-            print(f"   Predicted: '{trajectory.guesser_data['prediction']}'")
+            # Show both predictions
+            print(f"\n🎯 Predictions:")
             print(
-                f"   Correct: {'✅' if trajectory.game_outcome['prediction_correct'] else '❌'}"
+                f"   Generator predicted: '{trajectory.generator_data['prediction']}'"
+            )
+            print(
+                f"   Generator correct: {'✅' if trajectory.game_outcome['generator_prediction_correct'] else '❌'}"
+            )
+            print(f"   Guesser predicted: '{trajectory.guesser_data['prediction']}'")
+            print(
+                f"   Guesser correct: {'✅' if trajectory.game_outcome['guesser_prediction_correct'] else '❌'}"
             )
 
             # Show rewards
@@ -929,7 +983,7 @@ for step in range(num_steps):
             # Brief summary for remaining games
             status = "✅" if trajectory.execution_result["success"] else "❌"
             pred_status = (
-                "✅" if trajectory.game_outcome["prediction_correct"] else "❌"
+                "✅" if trajectory.game_outcome["guesser_prediction_correct"] else "❌"
             )
             print(
                 f"🎮 Game {game_idx + 1}: Code {status}, Prediction {pred_status}, Gen: {trajectory.game_outcome['generator_reward']:+.1f}, Guess: {trajectory.game_outcome['guesser_reward']:+.1f}"
@@ -944,8 +998,11 @@ for step in range(num_steps):
         if trajectory.game_outcome["code_executable"]:
             code_executable_count += 1
 
-        if trajectory.game_outcome["prediction_correct"]:
-            correct_predictions += 1
+        if trajectory.game_outcome["generator_prediction_correct"]:
+            generator_correct_predictions += 1
+
+        if trajectory.game_outcome["guesser_prediction_correct"]:
+            guesser_correct_predictions += 1
 
     # Compute policy gradient loss using RAE
     loss = compute_policy_gradient_loss(model, tokenizer, trajectories, rae, device)
@@ -961,7 +1018,10 @@ for step in range(num_steps):
     # Logging
     rae_stats = rae.get_stats()
     executable_rate = code_executable_count / games_per_step
-    prediction_accuracy = correct_predictions / games_per_step
+    generator_prediction_accuracy = (
+        generator_correct_predictions / games_per_step
+    )  # NEW
+    guesser_prediction_accuracy = guesser_correct_predictions / games_per_step  # NEW
 
     stats = {
         "step": step,
@@ -969,14 +1029,18 @@ for step in range(num_steps):
         "generator_wins": generator_wins,
         "guesser_wins": guesser_wins,
         "executable_rate": executable_rate,
-        "prediction_accuracy": prediction_accuracy,
+        "generator_prediction_accuracy": generator_prediction_accuracy,  # NEW
+        "guesser_prediction_accuracy": guesser_prediction_accuracy,  # NEW
         **rae_stats,
     }
 
     print(f"📊 Loss: {loss.item():.4f}")
     print(f"🏆 Generator wins: {generator_wins}, Guesser wins: {guesser_wins}")
     print(f"💻 Executable code rate: {executable_rate:.2%}")
-    print(f"🎯 Prediction accuracy: {prediction_accuracy:.2%}")
+    print(
+        f"🎯 Generator prediction accuracy: {generator_prediction_accuracy:.2%}"
+    )  # NEW
+    print(f"🎯 Guesser prediction accuracy: {guesser_prediction_accuracy:.2%}")  # NEW
     print(
         f"📈 Baselines - Gen: {rae_stats['baseline_generator']:.3f}, Guess: {rae_stats['baseline_guesser']:.3f}"
     )
