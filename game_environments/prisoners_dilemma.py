@@ -37,15 +37,21 @@ class IteratedPrisonersDilemma(BaseGame):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.num_rounds = config.get("num_rounds", 100)
-        
+
         # Handle both config formats for payoff matrix
         payoff_config = config.get("payoff_matrix", {})
         if "cooperate_cooperate" in payoff_config:
             # New config format from YAML
             self.payoff_matrix = {
-                ("cooperate", "cooperate"): tuple(payoff_config.get("cooperate_cooperate", [3, 3])),
-                ("cooperate", "defect"): tuple(payoff_config.get("cooperate_defect", [0, 5])),
-                ("defect", "cooperate"): tuple(payoff_config.get("defect_cooperate", [5, 0])),
+                ("cooperate", "cooperate"): tuple(
+                    payoff_config.get("cooperate_cooperate", [3, 3])
+                ),
+                ("cooperate", "defect"): tuple(
+                    payoff_config.get("cooperate_defect", [0, 5])
+                ),
+                ("defect", "cooperate"): tuple(
+                    payoff_config.get("defect_cooperate", [5, 0])
+                ),
                 ("defect", "defect"): tuple(payoff_config.get("defect_defect", [1, 1])),
             }
         else:
@@ -62,49 +68,33 @@ class IteratedPrisonersDilemma(BaseGame):
 
     def get_player_prompt(self, player_id: int, role: str) -> str:
         """Generate a prompt for players to write their prisoner's dilemma strategy."""
-        return f"""You are Player {player_id} in an Iterated Prisoner's Dilemma tournament. Your goal is to write a strategy function that will compete against another player's strategy over {self.num_rounds} rounds.
+        return f"""Write a Python strategy function for an Iterated Prisoner's Dilemma tournament ({self.num_rounds} rounds).
 
-## Game Rules:
-In each round, you can either 'cooperate' or 'defect'. The payoffs are:
-- Both cooperate: Both get 3 points
-- Both defect: Both get 1 point  
-- One cooperates, one defects: Cooperator gets 0, defector gets 5
+TASK: You must write ONLY a Python function called `strategy`. No explanations, no additional text.
 
-## Your Task:
-Write a Python function called `strategy` that takes the game history and returns your action.
+PAYOFFS:
+- Both cooperate: 3 points each
+- Both defect: 1 point each  
+- One cooperates, one defects: 0 for cooperator, 5 for defector
 
+FUNCTION SIGNATURE:
 ```python
 def strategy(my_history, opponent_history, round_number):
-    \"\"\"
-    Your prisoner's dilemma strategy.
+    # my_history: list of your actions ['cooperate', 'defect', ...]
+    # opponent_history: list of opponent's actions ['cooperate', 'defect', ...]
+    # round_number: current round (1, 2, 3, ...)
+    # MUST return either 'cooperate' or 'defect'
     
-    Args:
-        my_history: List of your previous actions ['cooperate', 'defect', ...]
-        opponent_history: List of opponent's previous actions ['cooperate', 'defect', ...]
-        round_number: Current round number (1-based)
-        
-    Returns:
-        str: Either 'cooperate' or 'defect'
-    \"\"\"
-    # Your strategy logic here
-    # Examples:
-    # - Always cooperate: return 'cooperate'
-    # - Always defect: return 'defect'
-    # - Tit-for-tat: cooperate first, then copy opponent's last move
-    # - More complex strategies based on patterns, forgiveness, etc.
-    
-    return 'cooperate'  # Replace with your strategy
+    # Your code here
+    return 'cooperate'  # or 'defect'
 ```
 
-## Strategy Ideas:
-- **Tit-for-Tat**: Cooperate first, then copy opponent's previous move
-- **Generous Tit-for-Tat**: Like tit-for-tat but occasionally forgive defections
-- **Pavlov (Win-Stay, Lose-Shift)**: Repeat if you got high payoff, switch if low
-- **Random**: Cooperate or defect randomly
-- **Grudger**: Cooperate until opponent defects, then always defect
-- **Pattern Recognition**: Try to detect and exploit opponent patterns
+EXAMPLES:
+- Tit-for-tat: `if not opponent_history: return 'cooperate'` then `return opponent_history[-1]`
+- Always cooperate: `return 'cooperate'`
+- Always defect: `return 'defect'`
 
-Write a strategy that maximizes your total score over {self.num_rounds} rounds:"""
+Write your strategy function now (function only, no other text):"""
 
     def extract_code_from_response(self, response: str) -> str:
         """Extract the strategy function from the LLM response."""
