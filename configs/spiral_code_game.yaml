@@ -17,16 +17,53 @@ lora:
 game:
   timeout: 3  # Code execution timeout in seconds
 
+# Generation parameters
+generation:
+  max_new_tokens: 400              # Maximum response length
+  temperature: 1.0                  # Sampling temperature
+  top_p: 1.0                        # Top P sampling (1.0 = disabled)
+  top_k: -1                         # Top K sampling (-1 = disabled)
+  do_sample: true                   # Enable sampling
+  
+  # Role-specific overrides
+  generator_max_tokens: 400        # For code generation
+  guesser_max_tokens: 400           # For output prediction (shorter)
+
 # Training parameters
 training:
-  num_steps: 200
-  learning_rate: 0.00002
-  rae_alpha: 0.95  # Role-conditioned advantage estimation decay rate
-  gradient_clip_norm: 1.0
-  games_per_step_v100: 2      # Conservative for V100 memory constraints
-  games_per_step_other: 4     # Standard for A100+ GPUs
-  save_interval: 20           # Save checkpoint every N steps
+  num_steps: 100
+  
+  # Optimizer configuration
+  optimizer: "AdamW"                # Changed from Adam to AdamW
+  learning_rate: 0.000001           # 1×10^-6 (reduced from 0.00002)
+  learning_rate_scheduler: "constant"
+  adam_beta1: 0.9                   # β1 parameter for Adam/AdamW
+  adam_beta2: 0.95                  # β2 parameter for Adam/AdamW  
+  weight_decay: 0.0                 # Weight decay
+  
+  # Gradient and clipping
+  gradient_clip_norm: 1.0           # Already correct
+  
+  # Batch size and game configuration
+  batch_size: 128                   # Target batch size
+  games_per_step_v100: 2           # Increased to approach batch_size=128
+  games_per_step_other: 4          # Increased for better GPUs
+  
+  # SPIRAL-specific parameters
+  rae_alpha: 0.95                   # EMA decay rate (already correct)
+  discount_factor: 1.0              # Discount factor for rewards
+  inner_proximal_update_epochs: 2   # Inner update epochs
+  
+  # Policy optimization parameters (for future PPO-style extensions)
+  kl_loss_coefficient: 0.0          # KL divergence loss coefficient
+  kl_penalty_coefficient: 0.0       # KL penalty coefficient
+  policy_clipping_parameter: 0.2    # Policy clipping parameter
+  
+  # Checkpointing and logging
+  save_interval: 20                 # Save checkpoint every N steps
   checkpoint_dir: "checkpoints/spiral_code_game"
+  max_games_to_show: 2              # Show detailed logs for first N games per step
+  show_all_games: false             # Set to true to show all games (can be very verbose)
 
 # Evaluation configuration
 evaluation:
@@ -51,7 +88,7 @@ wandb:
 
 # vLLM configuration (optional, for faster inference)
 vllm:
-  enabled: false              # Disabled by default
+  enabled: true              # Disabled by default
   gpu_memory_utilization: 0.85
   max_model_len: 2048
   trust_remote_code: true
