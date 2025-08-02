@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=grpo_code_exec
-#SBATCH --output=slurm-grpo-%j.out
-#SBATCH --error=slurm-grpo-%j.err
+#SBATCH --output=logs/job_%j_%x/slurm-grpo-%j.out
+#SBATCH --error=logs/job_%j_%x/slurm-grpo-%j.err
 #SBATCH --partition=xeon-g6-volta
 #SBATCH --gres=gpu:volta:1
 #SBATCH --nodes=1
@@ -10,6 +10,24 @@
 
 # MIT Supercloud SLURM script for GRPO Code Execution Training
 # Single V100 GPU training with logs output
+#
+# Usage: sbatch submit_grpo_training.sh [config_overrides...]
+# Examples:
+#   sbatch submit_grpo_training.sh --training_args.max_steps=50 --training_args.learning_rate=0.0001
+#   sbatch submit_grpo_training.sh --training_args.per_device_train_batch_size=4 --evaluation.eval_interval_steps=10
+
+# Parse command line arguments for config overrides
+CONFIG_OVERRIDES=""
+echo "🔍 Debug: Parsing arguments: $@"
+for arg in "$@"; do
+    echo "🔍 Debug: Processing argument: '$arg'"
+    if [[ $arg == --* ]]; then
+        # Keep the -- prefix for Python script
+        CONFIG_OVERRIDES="$CONFIG_OVERRIDES $arg"
+        echo "🔍 Debug: Added override: $arg"
+    fi
+done
+echo "🔍 Debug: Final CONFIG_OVERRIDES: '$CONFIG_OVERRIDES'"
 
 echo "🚀 Starting GRPO Code Execution Training on Supercloud V100"
 echo "============================================================"
@@ -17,6 +35,9 @@ echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "Start time: $(date)"
+if [ ! -z "$CONFIG_OVERRIDES" ]; then
+    echo "Config overrides: $CONFIG_OVERRIDES"
+fi
 echo ""
 
 # Environment setup
@@ -47,7 +68,8 @@ export HF_DATASETS_OFFLINE=1
 export WANDB_MODE=offline
 
 # Set up logs directory with job-specific subfolder
-JOB_LOG_DIR="logs/job_${SLURM_JOB_ID}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+JOB_LOG_DIR="logs/job_${SLURM_JOB_ID}_${TIMESTAMP}"
 mkdir -p "$JOB_LOG_DIR"
 echo "📁 Created job log directory: $JOB_LOG_DIR"
 
@@ -72,13 +94,15 @@ echo ""
 
 # Start training with timestamping
 echo "🏋️ Starting GRPO training at $(date)..."
-echo "Command: python grpo_code_execution.py --config configs/grpo_code_execution.yaml"
+PYTHON_CMD="python grpo_code_execute.py --config configs/grpo_code_execution.yaml"
+if [ ! -z "$CONFIG_OVERRIDES" ]; then
+    PYTHON_CMD="$PYTHON_CMD $CONFIG_OVERRIDES"
+fi
+echo "Command: $PYTHON_CMD"
 echo ""
 
 # Run the training with output redirection to job-specific log
-python grpo_code_execution.py \
-    --config configs/grpo_code_execution.yaml \
-    2>&1 | tee "$JOB_LOG_DIR/training_output.log"
+eval "$PYTHON_CMD" 2>&1 | tee "$JOB_LOG_DIR/training_output.log"
 
 # Capture exit status
 TRAINING_EXIT_CODE=$?

@@ -83,6 +83,12 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
+# wandb
+wandb/
+
+#ignroe TODO.txt
+TODO.txt
+
 # Pyre type checker
 .pyre/
 

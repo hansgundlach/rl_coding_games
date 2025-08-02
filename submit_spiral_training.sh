@@ -13,8 +13,8 @@
 #
 # Usage: sbatch submit_spiral_training.sh [config_overrides...]
 # Examples:
-#   sbatch submit_spiral_training.sh --num_steps=50 --learning_rate=0.0001
-#   sbatch submit_spiral_training.sh --games_per_step_v100=3 --eval_interval_steps=10
+#   sbatch submit_spiral_training.sh --training.num_steps=50 --training.learning_rate=0.0001
+#   sbatch submit_spiral_training.sh --training.games_per_step_v100=3 --evaluation.eval_interval_steps=10
 
 # Parse command line arguments for config overrides
 CONFIG_OVERRIDES=""

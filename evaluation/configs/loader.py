@@ -4,6 +4,10 @@ Configuration loader for MBPP evaluation system.
 Supports YAML configuration files and environment variable overrides.
 """
 
+
+
+# sbatch submit_spiral_code_game.sh --training.num_steps=200 --evaluation.eval_interval_steps=20 evaluation.num_questions=30
+
 import os
 import yaml
 import logging
