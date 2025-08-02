@@ -1,7 +1,7 @@
 # Code Generation Game - Setup and Running Instructions
 
 ## Overview
-This implements a code generation game where a Qwen model learns to write Python code that a static opponent (SmolLM-135M) cannot predict the output of. The system uses GRPO (Group Relative Policy Optimization) training.
+
 
 ## Quick Start
 

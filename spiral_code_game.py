@@ -402,8 +402,7 @@ class CodeGenerationGame:
 Write a complete Python program that demonstrates a programming concept or solves a simple problem.
 The program should be executable and produce some output.
 
-Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot.
-
+Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot. Player 2 only sees the code, not the output or your thoughts ie hide information that will help them predict the output.
 
 
 Format your response with the Python code AND your prediction:
