@@ -26,8 +26,8 @@ generation:
   do_sample: true                   # Enable sampling
   
   # Role-specific overrides
-  generator_max_tokens: 400        # For code generation
-  guesser_max_tokens: 400           # For output prediction (shorter)
+  generator_max_tokens: 1024        # For code generation
+  guesser_max_tokens: 500           # For output prediction (shorter)
 
 # Training parameters
 training:
@@ -78,7 +78,7 @@ evaluation:
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_code_game"
   temperature: 0.2
-  max_new_tokens: 256
+  max_new_tokens: 512
   timeout_seconds: 10
 
 # Weights & Biases configuration  
