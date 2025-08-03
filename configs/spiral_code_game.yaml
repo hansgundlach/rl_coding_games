@@ -80,7 +80,7 @@ evaluation:
   eval_interval_steps: 20     # Run evaluation every N steps
   
   # MBPP evaluation settings
-  num_questions: 5            # Reduced for faster evaluation during training
+  num_questions: 10            # Reduced for faster evaluation during training
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_code_game"
   temperature: 0.2
