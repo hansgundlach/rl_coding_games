@@ -1,0 +1,96 @@
+# GRPO Code Game with ICL Memory Opponent Configuration
+# Generator trained with GRPO, Guesser uses frozen weights + ICL memory
+
+# Model Configuration
+generator_model:
+  id: "Qwen/Qwen3-1.7B"  # Trainable generator model
+  cache_dir: "./model_cache"
+
+guesser_model:
+  id: "Qwen/Qwen2.5-1.5B"  # Frozen guesser model (same family)
+  cache_dir: "./model_cache"
+
+# LoRA Configuration for Generator
+lora:
+  task_type: "CAUSAL_LM"
+  r: 16
+  lora_alpha: 32
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+# ICL Memory Configuration
+icl:
+  memory_size: 16               # Max examples to keep in memory
+  refresh_every: 5          # Games between memory updates
+  snapshot_max: 10              # Max frozen snapshots to keep
+  p_latest: 0.8                 # 80% latest ICL, 20% frozen snapshots
+
+# Game Configuration
+game:
+  timeout: 10                   # Code execution timeout in seconds
+
+# Generation Configuration
+generation:
+  generator_max_tokens: 512     # Max tokens for code generation
+  guesser_max_tokens: 256       # Max tokens for output prediction
+  temperature: 0.8
+  top_p: 0.9
+  top_k: 50
+  do_sample: true
+
+# Training Configuration
+training:
+  num_steps: 50                 # Training steps
+  games_per_step: 8             # Games per training step
+  save_interval: 10             # Save checkpoint every N steps
+  checkpoint_dir: "./checkpoints/grpo_code_game_icl"
+
+# GRPO Training Arguments
+training_args:
+  learning_rate: 0.00002
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 2
+  max_prompt_length: 512
+  max_completion_length: 512
+  num_generations: 2
+  optim: "adamw_torch"
+  num_train_epochs: 1
+  gradient_checkpointing: true
+  dataloader_pin_memory: true
+  remove_unused_columns: false
+  logging_steps: 1
+  max_steps: 50
+  output_dir: "./outputs/grpo_code_game_icl"
+
+# Dataset Configuration
+dataset:
+  size: 100
+
+# Evaluation Configuration
+evaluation:
+  enabled: true
+  enabled_initial: true
+  enabled_final: true
+  enabled_interval: false
+  eval_interval_steps: 10
+  num_questions: 5
+  temperature: 0.2
+  max_new_tokens: 512
+  timeout_seconds: 10
+  results_dir: "./eval_results"
+  dataset_path: null  # Auto-detect
+
+# W&B Configuration
+wandb:
+  enabled: true
+  project_name_prefix: "grpo-code-game-icl"
+
+# vLLM Configuration (optional)
+vllm:
+  enabled: false
+  port: 8000
+  host: "127.0.0.1"
+  gpu_memory_utilization: 0.85
+  max_model_len: 2048
+  integration:
+    use_for_grpo_completions: false
+    log_performance_comparison: false
