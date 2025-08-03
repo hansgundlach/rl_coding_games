@@ -927,59 +927,87 @@ def icl_enhanced_reward_function(completions, **kwargs):
     max_code_chars = debug_config.get("max_code_chars", 500)
     show_full_responses = debug_config.get("show_full_responses", False)
     show_execution_details = debug_config.get("show_execution_details", True)
-    
+
     if show_detailed > 0:
         print(f"\n{'='*80}")
-        print(f"🔍 DETAILED GAME RESULTS (showing {min(show_detailed, len(completions))} games)")
+        print(
+            f"🔍 DETAILED GAME RESULTS (showing {min(show_detailed, len(completions))} games)"
+        )
         print(f"{'='*80}")
-        
+
         for i in range(min(show_detailed, len(completions))):
             completion = completions[i]
             reward = rewards[i]
-            
+
             print(f"\n🎮 Game {i+1}/{len(completions)} - Reward: {reward:+.2f}")
             print("-" * 60)
-            
+
             # Extract and show code
             code = extract_code_from_response(completion)
             prediction = extract_prediction_from_response(completion)
-            
+
             if show_full_responses:
                 print(f"📝 Full Response:")
                 print(f"```\n{completion}\n```")
-            
+
             print(f"🤖 Generated Code ({len(code)} chars):")
-            display_code = code[:max_code_chars] + ("..." if len(code) > max_code_chars else "")
+            display_code = code[:max_code_chars] + (
+                "..." if len(code) > max_code_chars else ""
+            )
             print(f"```python\n{display_code}\n```")
-            
+
             print(f"🎯 Generator Prediction: '{prediction}'")
-            
+
             if show_execution_details and code:
                 # Execute and show results
                 execution_result = safe_execute_code(code, config["game"]["timeout"])
-                actual_output = execution_result["output"] if execution_result["success"] else ""
-                
+                actual_output = (
+                    execution_result["output"] if execution_result["success"] else ""
+                )
+
                 print(f"🔧 Execution Results:")
                 print(f"   Success: {'✅' if execution_result['success'] else '❌'}")
                 print(f"   Runtime: {execution_result['execution_time']:.3f}s")
-                
+
                 if execution_result["success"]:
                     print(f"   Actual Output: '{actual_output}'")
                 else:
-                    error_msg = execution_result["error"][:200] + ("..." if len(execution_result["error"]) > 200 else "")
+                    error_msg = execution_result["error"][:200] + (
+                        "..." if len(execution_result["error"]) > 200 else ""
+                    )
                     print(f"   Error: {error_msg}")
-                
+
                 # Show guesser prediction if we have one
-                if hasattr(icl_enhanced_reward_function, '_last_guesser_predictions'):
-                    guesser_pred = icl_enhanced_reward_function._last_guesser_predictions.get(i, "Unknown")
+                if hasattr(icl_enhanced_reward_function, "_last_guesser_predictions"):
+                    guesser_pred = (
+                        icl_enhanced_reward_function._last_guesser_predictions.get(
+                            i, "Unknown"
+                        )
+                    )
                     print(f"🤔 Guesser Prediction: '{guesser_pred}'")
-                    print(f"📊 Predictions Match: {'✅' if guesser_pred.strip() == actual_output.strip() else '❌'}")
-        
+                    print(
+                        f"📊 Predictions Match: {'✅' if guesser_pred.strip() == actual_output.strip() else '❌'}"
+                    )
+
         print(f"{'='*80}")
 
+    avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
     print(
-        f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {sum(rewards)/len(rewards):.2f}"
+        f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {avg_reward:.2f}"
     )
+
+    # Log batch metrics to W&B if enabled
+    if WANDB_ENABLED and wandb.run:
+        wandb.log(
+            {
+                "training/avg_reward": avg_reward,
+                "training/generator_wins": generator_wins,
+                "training/guesser_wins": guesser_wins,
+                "training/icl_memory_size": len(latest_memory.examples),
+                "training/kl_beta": config["training_args"].get("kl_beta", None),
+                "step": getattr(icl_enhanced_reward_function, "games_played", 0),
+            }
+        )
 
     return rewards
 
@@ -994,6 +1022,7 @@ grpo_trainer = GRPOTrainer(
 
 # Add interval evaluation callback
 from transformers import TrainerCallback
+
 
 class IntervalEvaluationCallback(TrainerCallback):
     def __init__(self, evaluator, model, tokenizer, config, wandb_enabled):
@@ -1039,6 +1068,7 @@ class IntervalEvaluationCallback(TrainerCallback):
                         "step": state.global_step,
                     }
                 )
+
 
 # Add the callback to trainer
 interval_callback = IntervalEvaluationCallback(
@@ -1089,7 +1119,7 @@ with open(f"{final_checkpoint_dir}/icl_memory.json", "w") as f:
             }
             for ex in latest_memory.examples
         ],
-        "games_played": getattr(icl_enhanced_reward_function, 'games_played', 0),
+        "games_played": getattr(icl_enhanced_reward_function, "games_played", 0),
     }
     json.dump(memory_data, f, indent=2)
 

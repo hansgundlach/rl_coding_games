@@ -19,10 +19,10 @@ lora:
 
 # ICL Memory Configuration
 icl:
-  memory_size: 8                # Max examples to keep in memory
+  memory_size: 2                # Max examples to keep in memory
   refresh_every: 12             # Games between memory updates
   snapshot_max: 8               # Max frozen snapshots to keep
-  p_latest: 0.6                 # 60% latest ICL, 40% frozen snapshots
+  p_latest: 0.5                 # 60% latest ICL, 40% frozen snapshots
 
 # Game Configuration
 game:
@@ -48,6 +48,7 @@ training:
 # GRPO Training Arguments
 training_args:
   learning_rate: 0.00002
+  beta: 0.1
   per_device_train_batch_size: 4
   gradient_accumulation_steps: 2
   max_prompt_length: 512
@@ -60,6 +61,22 @@ training_args:
   remove_unused_columns: false
   logging_steps: 1
   max_steps: 50
+  # ------------------------------------------------------------------
+  # Additional GRPO hyperparameters (all set to library defaults)
+  # Adjust these later to experiment without touching the code.
+  epsilon: 0.2               # trust-region lower-bound (PPO-style clipping)
+  epsilon_high: null         # when null, uses same value as `epsilon`
+  delta: null                # set a float > 1+epsilon to enable two-sided clipping
+  num_iterations: 1          # μ – number of optimisation mini-steps per batch
+  loss_type: "bnpo"         # "grpo", "bnpo", or "dr_grpo"
+  importance_sampling_level: "token"  # "token" or "sequence"
+  scale_rewards: true        # normalise rewards by std-dev (Dr-GRPO suggests false)
+  mask_truncated_completions: false    # ignore truncated samples in loss
+  sync_ref_model: false
+  ref_model_mixup_alpha: 0.6
+  ref_model_sync_steps: 512
+  top_entropy_quantile: 1.0  # 1.0 keeps all tokens; e.g. 0.2 keeps top-entropy tokens
+  # ------------------------------------------------------------------
   output_dir: "./outputs/grpo_code_game_icl"
 
 # Dataset Configuration
