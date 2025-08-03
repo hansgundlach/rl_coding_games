@@ -54,7 +54,7 @@ training_args:
   num_generations: 2
   optim: "adamw_torch"
   num_train_epochs: 1
-  gradient_checkpointing: true
+  gradient_checkpointing: false
   dataloader_pin_memory: true
   remove_unused_columns: false
   logging_steps: 1
