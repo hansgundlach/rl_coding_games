@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to sync the 5 most recent offline wandb runs
-# Offline runs are stored in wandb/ directory in a special format
+# All offline runs should be in the wandb/ folder with prefix "offline-run-"
 
 echo "🔄 Finding and syncing the 5 most recent offline wandb runs..."
 echo
@@ -12,51 +12,33 @@ if [ ! -d "wandb" ]; then
     exit 1
 fi
 
-# For offline runs, we need to sync from the wandb directory
-# First, let's find the most recent offline runs by checking for .wandb files
-echo "🔍 Scanning for offline wandb runs..."
+# Find all offline-run directories, sort by modification time (newest first) and take the first 5
+recent_runs=$(find wandb -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n' | sort -rn | head -5 | cut -d' ' -f2-)
 
-# Find all .wandb files (these indicate offline runs) and sort by modification time
-recent_wandb_files=$(find wandb -name "*.wandb" -type f -printf '%T@ %p\n' | sort -rn | head -5 | cut -d' ' -f2-)
-
-# Check if any offline runs were found
-if [ -z "$recent_wandb_files" ]; then
+# Check if any runs were found
+if [ -z "$recent_runs" ]; then
     echo "❌ No offline wandb runs found in wandb/ directory"
+    echo "Looking for directories with pattern: offline-run-*"
     exit 1
 fi
 
 echo "📋 Found the following recent offline runs:"
-count=0
-for wandb_file in $recent_wandb_files; do
-    count=$((count + 1))
-    run_dir=$(dirname "$wandb_file")
-    echo "$count. $run_dir"
-done
+echo "$recent_runs" | nl -w2 -s'. '
 echo
 
-# Method 1: Sync all offline runs at once (recommended)
-echo "🚀 Method 1: Syncing all recent offline runs at once..."
-if wandb sync wandb/; then
-    echo "✅ Successfully synced all offline runs from wandb/ directory"
-else
-    echo "❌ Batch sync failed, trying individual sync..."
+# Sync each run
+count=0
+for run_dir in $recent_runs; do
+    count=$((count + 1))
+    run_name=$(basename "$run_dir")
+    echo "🚀 [$count/5] Syncing: $run_name"
     
-    # Method 2: Sync individual runs if batch fails
-    echo "🚀 Method 2: Syncing individual runs..."
-    count=0
-    for wandb_file in $recent_wandb_files; do
-        count=$((count + 1))
-        run_dir=$(dirname "$wandb_file")
-        echo "🚀 [$count/5] Syncing: $run_dir"
-        
-        # For individual offline runs, sync from the run directory
-        if (cd "$run_dir" && wandb sync .); then
-            echo "✅ Successfully synced: $run_dir"
-        else
-            echo "❌ Failed to sync: $run_dir"
-        fi
-        echo
-    done
-fi
+    if wandb sync "$run_name"; then
+        echo "✅ Successfully synced: $run_name"
+    else
+        echo "❌ Failed to sync: $run_name"
+    fi
+    echo
+done
 
 echo "🎉 Finished syncing offline wandb runs!"
