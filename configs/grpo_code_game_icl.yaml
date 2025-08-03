@@ -19,10 +19,10 @@ lora:
 
 # ICL Memory Configuration
 icl:
-  memory_size: 20               # Max examples to keep in memory
-  refresh_every: 6          # Games between memory updates
-  snapshot_max: 8              # Max frozen snapshots to keep
-  p_latest: 0.8                 # 80% latest ICL, 20% frozen snapshots
+  memory_size: 8                # Max examples to keep in memory
+  refresh_every: 12             # Games between memory updates
+  snapshot_max: 8               # Max frozen snapshots to keep
+  p_latest: 0.6                 # 60% latest ICL, 40% frozen snapshots
 
 # Game Configuration
 game:
@@ -31,7 +31,8 @@ game:
 # Generation Configuration
 generation:
   generator_max_tokens: 512     # Max tokens for code generation
-  guesser_max_tokens: 256       # Max tokens for output prediction
+  guesser_max_tokens: 64        # Max tokens for output prediction
+  guesser_temperature: 1.0      # Higher temperature handicap for guesser
   temperature: 0.8
   top_p: 0.9
   top_k: 50

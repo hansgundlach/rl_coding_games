@@ -16,6 +16,7 @@ Game Rules:
 
 # Set environment variable to avoid tokenizers warning
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import torch
@@ -59,15 +60,16 @@ print(f"📝 Loading configuration from: {args.config}")
 with open(args.config, "r") as f:
     config = yaml.safe_load(f)
 
+
 # Apply config overrides from command line
 def apply_config_overrides(config, override_args):
     """Apply command line config overrides to loaded config."""
     overrides_applied = []
-    
+
     i = 0
     while i < len(override_args):
         arg = override_args[i]
-        
+
         # Handle --key=value format
         if "=" in arg:
             key, value = arg.split("=", 1)
@@ -80,7 +82,7 @@ def apply_config_overrides(config, override_args):
         else:
             i += 1
             continue
-            
+
         # Convert value to appropriate type
         if value.lower() == "true":
             value = True
@@ -95,7 +97,7 @@ def apply_config_overrides(config, override_args):
             .isdigit()
         ):
             value = float(value)
-            
+
         # Apply override to config using dot notation
         keys = key.split(".")
         current = config
@@ -103,25 +105,27 @@ def apply_config_overrides(config, override_args):
             if k not in current:
                 current[k] = {}
             current = current[k]
-        
+
         old_value = current.get(keys[-1], "NOT_SET")
         current[keys[-1]] = value
         overrides_applied.append(f"{key}: {old_value} -> {value}")
-        
+
         i += 1
-    
+
     if overrides_applied:
         print("🔧 Applied config overrides:")
         for override in overrides_applied:
             print(f"   {override}")
-    
+
     return config
+
 
 # Apply any config overrides
 config = apply_config_overrides(config, unknown_args)
 
 # Extract config values for easy access
 WANDB_ENABLED = config["wandb"]["enabled"]
+
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
@@ -184,6 +188,7 @@ def detect_platform_and_gpu():
         "platform": platform,
         "offline_reason": offline_reason,
     }
+
 
 # Auto-detect platform and capabilities
 print("🔧 Running platform detection...")
@@ -259,10 +264,11 @@ else:
         f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
     )
 
+
 def safe_execute_code(code: str, timeout: int = 5) -> dict:
     """
     Safely execute Python code in a sandboxed environment.
-    
+
     Returns:
         dict: {
             'success': bool,
@@ -329,70 +335,76 @@ def safe_execute_code(code: str, timeout: int = 5) -> dict:
 
     return result
 
+
 @dataclass
 class WinningExample:
     """A winning example for ICL memory."""
+
     code: str
     expected_output: str
     brief_rationale: str
 
+
 class ICLMemory:
     """In-Context Learning memory that stores winning examples."""
-    
+
     def __init__(self, max_size: int = 16):
         self.max_size = max_size
         self.examples: List[WinningExample] = []
-    
-    def add_winning_example(self, code: str, expected_output: str, brief_rationale: str):
+
+    def add_winning_example(
+        self, code: str, expected_output: str, brief_rationale: str
+    ):
         """Add a winning example to memory."""
         example = WinningExample(code, expected_output, brief_rationale)
         self.examples.append(example)
-        
+
         # Keep only the most recent examples
         if len(self.examples) > self.max_size:
-            self.examples = self.examples[-self.max_size:]
-    
+            self.examples = self.examples[-self.max_size :]
+
     def add_and_prune(self, wins: List[Dict], k: int = 16):
         """Add multiple wins and prune to k examples."""
         for win in wins:
             self.add_winning_example(
-                win["code"], 
-                win["expected_output"], 
-                win.get("brief_rationale", "Code executed successfully")
+                win["code"],
+                win["expected_output"],
+                win.get("brief_rationale", "Code executed successfully"),
             )
-        
+
         # Prune to k most recent
         if len(self.examples) > k:
             self.examples = self.examples[-k:]
-    
+
     def get_icl_prompt_prefix(self) -> str:
         """Generate ICL prompt prefix with examples."""
         if not self.examples:
             return ""
-        
+
         prefix = "Here are some examples of code and their outputs:\n\n"
         for i, example in enumerate(self.examples[-8:]):  # Use last 8 examples
             prefix += f"Example {i+1}:\n"
             prefix += f"Code:\n```python\n{example.code}\n```\n"
             prefix += f"Output: {example.expected_output}\n"
             prefix += f"Rationale: {example.brief_rationale}\n\n"
-        
+
         return prefix + "Now predict the output for the following code:\n\n"
+
 
 class ICLOpponent:
     """ICL-based opponent that uses frozen weights + memory."""
-    
+
     def __init__(self, model, tokenizer, device, memory: ICLMemory):
         self.model = model
-        self.tokenizer = tokenizer  
+        self.tokenizer = tokenizer
         self.device = device
         self.memory = memory
-    
+
     def predict_output(self, code: str) -> str:
         """Predict output using ICL memory."""
         # Build prompt with ICL examples
         icl_prefix = self.memory.get_icl_prompt_prefix()
-        
+
         prompt = f"""{icl_prefix}Code:
 ```python
 {code}
@@ -409,7 +421,7 @@ Provide your prediction in this exact format:
 </prediction>
 
 What will this code output?"""
-        
+
         # Generate prediction
         inputs = self.tokenizer(
             prompt, return_tensors="pt", truncation=True, max_length=1024
@@ -421,7 +433,9 @@ What will this code output?"""
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=config["generation"]["guesser_max_tokens"],
-                temperature=config["generation"]["temperature"],
+                temperature=config["generation"].get(
+                    "guesser_temperature", config["generation"]["temperature"]
+                ),
                 top_p=config["generation"]["top_p"],
                 top_k=(
                     config["generation"]["top_k"]
@@ -438,36 +452,49 @@ What will this code output?"""
         ).strip()
 
         # Extract prediction
-        pred_match = re.search(r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL)
+        pred_match = re.search(
+            r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL
+        )
         if pred_match:
             return pred_match.group(1).strip()
-        
+
         return ""
+
 
 # Memory management for training stability
 REFRESH_EVERY = config["icl"]["refresh_every"]  # games between ICL memory updates
-SNAPSHOT_MAX = config["icl"]["snapshot_max"]    # how many frozen memories to keep
-P_LATEST = config["icl"]["p_latest"]            # 80% latest ICL, 20% snapshot
+SNAPSHOT_MAX = config["icl"]["snapshot_max"]  # how many frozen memories to keep
+P_LATEST = config["icl"]["p_latest"]  # 80% latest ICL, 20% snapshot
 
 snapshot_buf = deque(maxlen=SNAPSHOT_MAX)
+
 
 def save_snapshot(latest_memory: ICLMemory):
     """Save a frozen copy of the memory."""
     snapshot_buf.append(deepcopy(latest_memory))
 
-def sample_opponent(generator_model, guesser_model, guesser_tokenizer, device, latest_memory: ICLMemory) -> ICLOpponent:
+
+def sample_opponent(
+    generator_model, guesser_model, guesser_tokenizer, device, latest_memory: ICLMemory
+) -> ICLOpponent:
     """Sample opponent: 80% latest ICL, 20% frozen snapshot."""
     if not snapshot_buf or random.random() < P_LATEST:
-        return ICLOpponent(guesser_model, guesser_tokenizer, device, latest_memory)  # latest ICL
-    return ICLOpponent(guesser_model, guesser_tokenizer, device, random.choice(snapshot_buf))  # frozen snapshot
+        return ICLOpponent(
+            guesser_model, guesser_tokenizer, device, latest_memory
+        )  # latest ICL
+    return ICLOpponent(
+        guesser_model, guesser_tokenizer, device, random.choice(snapshot_buf)
+    )  # frozen snapshot
+
 
 @dataclass
 class CodeGameTrajectory:
     """Store trajectory data for a single code generation game."""
-    
+
     generator_data: Dict  # Player 1 (generates code + predicts output)
-    game_outcome: Dict    # Final results and rewards
-    execution_result: Dict # Code execution results
+    game_outcome: Dict  # Final results and rewards
+    execution_result: Dict  # Code execution results
+
 
 def extract_code_from_response(response: str) -> str:
     """Extract Python code from model response."""
@@ -475,9 +502,10 @@ def extract_code_from_response(response: str) -> str:
     code_match = re.search(r"```python\s*\n(.*?)```", response, re.DOTALL)
     if code_match:
         return code_match.group(1).strip()
-    
+
     # Fallback: return the response as-is
     return response.strip()
+
 
 def extract_prediction_from_response(response: str) -> str:
     """Extract prediction from model response."""
@@ -485,14 +513,17 @@ def extract_prediction_from_response(response: str) -> str:
     pred_match = re.search(r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL)
     if pred_match:
         return pred_match.group(1).strip()
-    
+
     # Fallback: return empty string if no prediction found
     return ""
 
-def play_code_game(generator_model, guesser_opponent: ICLOpponent, tokenizer, device) -> CodeGameTrajectory:
+
+def play_code_game(
+    generator_model, guesser_opponent: ICLOpponent, tokenizer, device
+) -> CodeGameTrajectory:
     """
     Play a single game between generator (GRPO-trained) and guesser (ICL).
-    
+
     Returns complete trajectory data for training.
     """
     # Player 1: Generate code AND predict output
@@ -556,7 +587,9 @@ Write a Python program and predict its output:"""
     guesser_prediction = guesser_opponent.predict_output(generator_code)
 
     # Calculate rewards
-    rewards = calculate_rewards(execution_result, generator_prediction, guesser_prediction, actual_output)
+    rewards = calculate_rewards(
+        execution_result, generator_prediction, guesser_prediction, actual_output
+    )
 
     return CodeGameTrajectory(
         generator_data={
@@ -577,48 +610,60 @@ Write a Python program and predict its output:"""
         execution_result=execution_result,
     )
 
-def calculate_rewards(execution_result: Dict, generator_prediction: str, guesser_prediction: str, actual_output: str) -> Dict:
+
+def calculate_rewards(
+    execution_result: Dict,
+    generator_prediction: str,
+    guesser_prediction: str,
+    actual_output: str,
+) -> Dict:
     """
     Calculate rewards for both players.
-    
+
     Generator: Gets positive reward if:
     - Code is executable AND
     - Their prediction is correct AND
     - Player 2's prediction is wrong
-    
+
     Guesser: Gets positive reward if:
     - Their prediction is correct
     """
     # Check if code is executable
     code_executable = execution_result["success"]
-    
+
     # Check prediction correctness (exact match)
     generator_prediction_correct = (
         generator_prediction.strip() == actual_output.strip()
         if code_executable
         else False
     )
-    
+
     guesser_prediction_correct = (
         guesser_prediction.strip() == actual_output.strip()
         if code_executable
         else False
     )
-    
-    # Generator: +1 if (executable AND self-correct AND guesser-wrong), -1 otherwise
-    generator_reward = (
-        1.0
-        if (
-            code_executable
-            and generator_prediction_correct
-            and not guesser_prediction_correct
-        )
-        else -1.0
-    )
-    
+
+    # Reward shaping parameters
+    BASE_REWARD_EXECUTES = 0.3  # reward for runnable code
+    BONUS_SELF_PRED_CORRECT = 0.4  # bonus when generator predicts correctly
+    PENALTY_GUESSER_CORRECT = 0.7  # penalty if guesser also predicts correctly
+
+    # Shaped generator reward
+    generator_reward = 0.0
+    if code_executable:
+        generator_reward += BASE_REWARD_EXECUTES
+        if generator_prediction_correct:
+            generator_reward += BONUS_SELF_PRED_CORRECT
+        if guesser_prediction_correct:
+            generator_reward -= PENALTY_GUESSER_CORRECT
+
+    # Clip reward to [-1, 1] for GRPO stability
+    generator_reward = max(min(generator_reward, 1.0), -1.0)
+
     # Guesser: +1 if correct prediction, -1 otherwise
     guesser_reward = 1.0 if guesser_prediction_correct else -1.0
-    
+
     return {
         "generator": generator_reward,
         "guesser": guesser_reward,
@@ -729,8 +774,12 @@ training_args = config["training_args"]
 
 # Adaptive settings based on GPU
 if platform_info["gpu_type"] == "V100":
-    training_args["per_device_train_batch_size"] = min(training_args["per_device_train_batch_size"], 2)
-    training_args["gradient_accumulation_steps"] = max(training_args.get("gradient_accumulation_steps", 1), 4)
+    training_args["per_device_train_batch_size"] = min(
+        training_args["per_device_train_batch_size"], 2
+    )
+    training_args["gradient_accumulation_steps"] = max(
+        training_args.get("gradient_accumulation_steps", 1), 4
+    )
     print("🔧 Adjusted training args for V100 memory constraints")
 
 # Fix model config path for GRPOTrainer if in offline mode
@@ -738,7 +787,10 @@ if offline_mode:
     # Point the model config to actual cached snapshot directory so GRPOTrainer can find tokenizer files locally
     cached_model_dirs = glob.glob(
         os.path.join(
-            cache_dir, f"models--{generator_model_id.replace('/', '--')}", "snapshots", "*"
+            cache_dir,
+            f"models--{generator_model_id.replace('/', '--')}",
+            "snapshots",
+            "*",
         )
     )
     if cached_model_dirs:
@@ -776,6 +828,7 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
             }
         )
 
+
 # Create ICL-enhanced reward function that plays games to get rewards
 def icl_enhanced_reward_function(completions, **kwargs):
     """
@@ -783,75 +836,97 @@ def icl_enhanced_reward_function(completions, **kwargs):
     This is called by GRPO for each batch of completions.
     """
     print(f"🎮 Playing {len(completions)} games for reward calculation...")
-    
+
     rewards = []
     generator_wins = 0
     guesser_wins = 0
-    
+
     for i, completion in enumerate(completions):
         try:
             # Extract code and prediction from completion
             code = extract_code_from_response(completion)
             prediction = extract_prediction_from_response(completion)
-            
+
             if not code:
                 rewards.append(-1.0)
                 guesser_wins += 1
                 continue
-            
+
             # Execute the code
             execution_result = safe_execute_code(code, config["game"]["timeout"])
-            actual_output = execution_result["output"] if execution_result["success"] else ""
-            
+            actual_output = (
+                execution_result["output"] if execution_result["success"] else ""
+            )
+
             # Sample ICL opponent (80/20 mix)
-            opponent = sample_opponent(generator_model, guesser_model, guesser_tokenizer, device, latest_memory)
+            opponent = sample_opponent(
+                generator_model, guesser_model, guesser_tokenizer, device, latest_memory
+            )
             guesser_prediction = opponent.predict_output(code)
-            
+
             # Calculate rewards
-            game_rewards = calculate_rewards(execution_result, prediction, guesser_prediction, actual_output)
+            game_rewards = calculate_rewards(
+                execution_result, prediction, guesser_prediction, actual_output
+            )
             reward = game_rewards["generator"]
             rewards.append(reward)
-            
+
             # Track wins
             if reward > 0:
                 generator_wins += 1
-                
+
                 # Add to pending wins for ICL memory update
-                if execution_result["success"] and game_rewards["generator_prediction_correct"]:
-                    if not hasattr(icl_enhanced_reward_function, 'pending_wins'):
+                if (
+                    execution_result["success"]
+                    and game_rewards["generator_prediction_correct"]
+                ):
+                    if not hasattr(icl_enhanced_reward_function, "pending_wins"):
                         icl_enhanced_reward_function.pending_wins = []
-                    icl_enhanced_reward_function.pending_wins.append({
-                        "code": code,
-                        "expected_output": actual_output,
-                        "brief_rationale": "Generator won: code executed correctly and prediction was accurate"
-                    })
+                    icl_enhanced_reward_function.pending_wins.append(
+                        {
+                            "code": code,
+                            "expected_output": actual_output,
+                            "brief_rationale": "Generator won: code executed correctly and prediction was accurate",
+                        }
+                    )
             else:
                 guesser_wins += 1
-                
+
         except Exception as e:
             print(f"Error in game {i}: {e}")
             rewards.append(-1.0)
             guesser_wins += 1
-    
+
     # Update global game counter
-    if not hasattr(icl_enhanced_reward_function, 'games_played'):
+    if not hasattr(icl_enhanced_reward_function, "games_played"):
         icl_enhanced_reward_function.games_played = 0
     icl_enhanced_reward_function.games_played += len(completions)
-    
+
     # Batch ICL memory updates
-    if (hasattr(icl_enhanced_reward_function, 'pending_wins') and 
-        icl_enhanced_reward_function.pending_wins and
-        icl_enhanced_reward_function.games_played % REFRESH_EVERY == 0):
-        
-        print(f"🧠 Updating ICL memory with {len(icl_enhanced_reward_function.pending_wins)} new winning examples...")
-        latest_memory.add_and_prune(icl_enhanced_reward_function.pending_wins, k=config["icl"]["memory_size"])
+    if (
+        hasattr(icl_enhanced_reward_function, "pending_wins")
+        and icl_enhanced_reward_function.pending_wins
+        and icl_enhanced_reward_function.games_played % REFRESH_EVERY == 0
+    ):
+
+        print(
+            f"🧠 Updating ICL memory with {len(icl_enhanced_reward_function.pending_wins)} new winning examples..."
+        )
+        latest_memory.add_and_prune(
+            icl_enhanced_reward_function.pending_wins, k=config["icl"]["memory_size"]
+        )
         save_snapshot(latest_memory)
         icl_enhanced_reward_function.pending_wins = []  # Reset
-        print(f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)")
-    
-    print(f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {sum(rewards)/len(rewards):.2f}")
-    
+        print(
+            f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)"
+        )
+
+    print(
+        f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {sum(rewards)/len(rewards):.2f}"
+    )
+
     return rewards
+
 
 # Replace the simple reward function with the ICL-enhanced one
 grpo_trainer = GRPOTrainer(
@@ -896,9 +971,15 @@ generator_tokenizer.save_pretrained(final_checkpoint_dir)
 # Save final ICL memory state
 with open(f"{final_checkpoint_dir}/icl_memory.json", "w") as f:
     memory_data = {
-        "examples": [{"code": ex.code, "expected_output": ex.expected_output, "brief_rationale": ex.brief_rationale} 
-                   for ex in latest_memory.examples],
-        "games_played": games_played
+        "examples": [
+            {
+                "code": ex.code,
+                "expected_output": ex.expected_output,
+                "brief_rationale": ex.brief_rationale,
+            }
+            for ex in latest_memory.examples
+        ],
+        "games_played": games_played,
     }
     json.dump(memory_data, f, indent=2)
 
