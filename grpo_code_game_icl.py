@@ -626,22 +626,6 @@ def calculate_rewards(execution_result: Dict, generator_prediction: str, guesser
         "guesser_prediction_correct": guesser_prediction_correct,
     }
 
-# GRPO reward function
-def grpo_reward_function(completions, **kwargs):
-    """
-    Reward function for GRPO training based on game outcomes.
-    This integrates with the ICL memory game results.
-    """
-    # Get the latest game results from the global storage
-    if hasattr(grpo_reward_function, 'latest_rewards'):
-        rewards = grpo_reward_function.latest_rewards[:len(completions)]
-        # Pad with zeros if needed
-        while len(rewards) < len(completions):
-            rewards.append(0.0)
-        return rewards
-    else:
-        # Default rewards if no game results available
-        return [0.0] * len(completions)
 
 # Set up model cache directory
 cache_dir = config["generator_model"]["cache_dir"]
@@ -711,10 +695,30 @@ print(f"Model device: {device}")
 latest_memory = ICLMemory(max_size=config["icl"]["memory_size"])
 print(f"🧠 Initialized ICL memory with size {config['icl']['memory_size']}")
 
-# Create a simple dataset for GRPO (we'll replace with actual data during training)
-prompt = "Generate code and predict output"
+# Create game dataset for GRPO
+game_prompt = """You are Player 1 in a code generation game. Your goals are to:
+1. Write Python code that executes successfully without errors
+2. Correctly predict what your code will output
+3. Write code whose output Player 2 will struggle to predict correctly
+
+Write a complete Python program that demonstrates a programming concept or solves a simple problem.
+The program should be executable and produce some output.
+
+Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot.
+
+Format your response with the Python code AND your prediction:
+```python
+# Your code here
+```
+
+<prediction>
+[exact output your code will produce]
+</prediction>
+
+Write a Python program and predict its output:"""
+
 dataset_size = config["dataset"]["size"]
-dataset = Dataset.from_dict({"prompt": [prompt] * dataset_size})
+dataset = Dataset.from_dict({"prompt": [game_prompt] * dataset_size})
 
 # Training parameters
 num_steps = config["training"]["num_steps"]
@@ -779,198 +783,96 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
             }
         )
 
-# Custom GRPO training function that integrates ICL games
-def run_grpo_training_with_icl():
-    """Run GRPO training integrated with ICL memory games."""
+# Create ICL-enhanced reward function that plays games to get rewards
+def icl_enhanced_reward_function(completions, **kwargs):
+    """
+    ICL-enhanced reward function that plays games between generator and ICL guesser.
+    This is called by GRPO for each batch of completions.
+    """
+    print(f"🎮 Playing {len(completions)} games for reward calculation...")
     
-    # Convert games to prompts for GRPO dataset
-    def create_game_dataset():
-        game_prompts = []
-        for _ in range(games_per_step * 2):  # More prompts than games for variety
-            game_prompts.append("""You are Player 1 in a code generation game. Your goals are to:
-1. Write Python code that executes successfully without errors
-2. Correctly predict what your code will output
-3. Write code whose output Player 2 will struggle to predict correctly
-
-Write a complete Python program that demonstrates a programming concept or solves a simple problem.
-The program should be executable and produce some output.
-
-Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot.
-
-Format your response with the Python code AND your prediction:
-```python
-# Your code here
-```
-
-<prediction>
-[exact output your code will produce]
-</prediction>
-
-Write a Python program and predict its output:""")
-        
-        return Dataset.from_dict({"prompt": game_prompts})
+    rewards = []
+    generator_wins = 0
+    guesser_wins = 0
     
-    # Create dataset for GRPO
-    training_dataset = create_game_dataset()
-    
-    # Update trainer dataset
-    grpo_trainer.train_dataset = training_dataset
-    
-    # Training loop with ICL memory management
-    games_played = 0
-    pending_wins = []  # Collect wins between memory refreshes
-    
-    for step in range(num_steps):
-        print(f"\n🎯 Step {step + 1}/{num_steps}")
-        
-        # Play games to generate rewards for GRPO
-        trajectories = []
-        generator_wins = 0
-        guesser_wins = 0
-        code_executable_count = 0
-        rewards_for_grpo = []
-        
-        for game_idx in range(games_per_step):
-            # Sample opponent (80/20 mix)
+    for i, completion in enumerate(completions):
+        try:
+            # Extract code and prediction from completion
+            code = extract_code_from_response(completion)
+            prediction = extract_prediction_from_response(completion)
+            
+            if not code:
+                rewards.append(-1.0)
+                guesser_wins += 1
+                continue
+            
+            # Execute the code
+            execution_result = safe_execute_code(code, config["game"]["timeout"])
+            actual_output = execution_result["output"] if execution_result["success"] else ""
+            
+            # Sample ICL opponent (80/20 mix)
             opponent = sample_opponent(generator_model, guesser_model, guesser_tokenizer, device, latest_memory)
+            guesser_prediction = opponent.predict_output(code)
             
-            # Play game
-            trajectory = play_code_game(generator_model, opponent, generator_tokenizer, device)
-            trajectories.append(trajectory)
+            # Calculate rewards
+            game_rewards = calculate_rewards(execution_result, prediction, guesser_prediction, actual_output)
+            reward = game_rewards["generator"]
+            rewards.append(reward)
             
-            # Collect reward for GRPO
-            rewards_for_grpo.append(trajectory.game_outcome["generator_reward"])
-            
-            games_played += 1
-            
-            # Track statistics
-            if trajectory.game_outcome["generator_reward"] > 0:
+            # Track wins
+            if reward > 0:
                 generator_wins += 1
                 
-                # Collect winning example for memory update
-                if trajectory.game_outcome["code_executable"] and trajectory.game_outcome["generator_prediction_correct"]:
-                    pending_wins.append({
-                        "code": trajectory.generator_data["code"],
-                        "expected_output": trajectory.game_outcome["actual_output"],
+                # Add to pending wins for ICL memory update
+                if execution_result["success"] and game_rewards["generator_prediction_correct"]:
+                    if not hasattr(icl_enhanced_reward_function, 'pending_wins'):
+                        icl_enhanced_reward_function.pending_wins = []
+                    icl_enhanced_reward_function.pending_wins.append({
+                        "code": code,
+                        "expected_output": actual_output,
                         "brief_rationale": "Generator won: code executed correctly and prediction was accurate"
                     })
             else:
                 guesser_wins += 1
-            
-            if trajectory.game_outcome["code_executable"]:
-                code_executable_count += 1
-            
-            # Show detailed results for first few games
-            if game_idx < 2:  # Show first 2 games
-                print(f"\n{'='*60}")
-                print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
-                print(f"{'='*60}")
                 
-                print("🤖 Generated Code:")
-                print("```python")
-                print(trajectory.generator_data["code"])
-                print("```")
-                
-                exec_result = trajectory.execution_result
-                print(f"\n🔧 Execution Results:")
-                print(f"   Success: {'✅' if exec_result['success'] else '❌'}")
-                if exec_result["success"]:
-                    print(f"   Actual Output: '{trajectory.game_outcome['actual_output']}'")
-                else:
-                    print(f"   Error: {exec_result['error'][:100]}...")
-                
-                print(f"\n🎯 Predictions:")
-                print(f"   Generator predicted: '{trajectory.generator_data['prediction']}'")
-                print(f"   Generator correct: {'✅' if trajectory.game_outcome['generator_prediction_correct'] else '❌'}")
-                
-                print(f"\n🏆 Rewards:")
-                print(f"   Generator: {trajectory.game_outcome['generator_reward']:+.1f}")
-                print(f"   Guesser: {trajectory.game_outcome['guesser_reward']:+.1f}")
-                print(f"{'='*60}")
+        except Exception as e:
+            print(f"Error in game {i}: {e}")
+            rewards.append(-1.0)
+            guesser_wins += 1
+    
+    # Update global game counter
+    if not hasattr(icl_enhanced_reward_function, 'games_played'):
+        icl_enhanced_reward_function.games_played = 0
+    icl_enhanced_reward_function.games_played += len(completions)
+    
+    # Batch ICL memory updates
+    if (hasattr(icl_enhanced_reward_function, 'pending_wins') and 
+        icl_enhanced_reward_function.pending_wins and
+        icl_enhanced_reward_function.games_played % REFRESH_EVERY == 0):
         
-        # Store rewards for GRPO reward function
-        grpo_reward_function.latest_rewards = rewards_for_grpo
-        
-        # Run GRPO training step
-        print(f"🏋️ Running GRPO training step with {len(rewards_for_grpo)} game rewards...")
-        grpo_trainer.train()
-        
-        # Batch ICL memory updates
-        if games_played % REFRESH_EVERY == 0 and pending_wins:
-            print(f"🧠 Updating ICL memory with {len(pending_wins)} new winning examples...")
-            latest_memory.add_and_prune(pending_wins, k=config["icl"]["memory_size"])
-            save_snapshot(latest_memory)
-            pending_wins = []  # Reset
-            print(f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)")
-        
-        # Logging
-        executable_rate = code_executable_count / games_per_step
-        generator_prediction_accuracy = sum(1 for t in trajectories if t.game_outcome["generator_prediction_correct"]) / games_per_step
-        avg_reward = sum(rewards_for_grpo) / len(rewards_for_grpo) if rewards_for_grpo else 0.0
-        
-        stats = {
-            "step": step,
-            "generator_wins": generator_wins,
-            "guesser_wins": guesser_wins,
-            "executable_rate": executable_rate,
-            "generator_prediction_accuracy": generator_prediction_accuracy,
-            "icl_memory_size": len(latest_memory.examples),
-            "snapshot_count": len(snapshot_buf),
-            "games_played": games_played,
-            "avg_game_reward": avg_reward,
-        }
-        
-        print(f"🏆 Generator wins: {generator_wins}, Guesser wins: {guesser_wins}")
-        print(f"💻 Executable code rate: {executable_rate:.2%}")
-        print(f"🎯 Generator prediction accuracy: {generator_prediction_accuracy:.2%}")
-        print(f"🧠 ICL memory size: {len(latest_memory.examples)}")
-        print(f"💰 Average game reward: {avg_reward:.2f}")
-        
-        if WANDB_ENABLED and wandb.run:
-            wandb.log(stats)
-        
-        # Run interval MBPP evaluation if enabled
-        if (
-            config["evaluation"].get("enabled_interval", False)
-            and mbpp_evaluator.config.enabled
-            and (step + 1) % config["evaluation"]["eval_interval_steps"] == 0
-        ):
-            print(f"🧪 Running interval MBPP evaluation at step {step + 1}...")
-            interval_results = mbpp_evaluator.evaluate_model(
-                generator_model, generator_tokenizer, step=step + 1, phase="interval"
-            )
+        print(f"🧠 Updating ICL memory with {len(icl_enhanced_reward_function.pending_wins)} new winning examples...")
+        latest_memory.add_and_prune(icl_enhanced_reward_function.pending_wins, k=config["icl"]["memory_size"])
+        save_snapshot(latest_memory)
+        icl_enhanced_reward_function.pending_wins = []  # Reset
+        print(f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)")
+    
+    print(f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {sum(rewards)/len(rewards):.2f}")
+    
+    return rewards
 
-            if WANDB_ENABLED and wandb.run and "pass_rate" in interval_results:
-                wandb.log(
-                    {
-                        "mbpp_eval/pass_rate": interval_results["pass_rate"],
-                        "mbpp_eval/problems_passed": interval_results["problems_passed"],
-                        "mbpp_eval/total_problems": interval_results["total_problems"],
-                        "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
-                        "step": step + 1,
-                    }
-                )
-        
-        # Save checkpoint periodically
-        if (step + 1) % config["training"]["save_interval"] == 0:
-            checkpoint_dir = f"{config['training']['checkpoint_dir']}/step_{step + 1}"
-            os.makedirs(checkpoint_dir, exist_ok=True)
-            generator_model.save_pretrained(checkpoint_dir)
-            generator_tokenizer.save_pretrained(checkpoint_dir)
-            
-            # Save ICL memory state
-            with open(f"{checkpoint_dir}/icl_memory.json", "w") as f:
-                memory_data = {
-                    "examples": [{"code": ex.code, "expected_output": ex.expected_output, "brief_rationale": ex.brief_rationale} 
-                               for ex in latest_memory.examples],
-                    "games_played": games_played
-                }
-                json.dump(memory_data, f, indent=2)
-            
-            print(f"💾 Saved checkpoint at step {step + 1}")
+# Replace the simple reward function with the ICL-enhanced one
+grpo_trainer = GRPOTrainer(
+    model=generator_model,
+    reward_funcs=[icl_enhanced_reward_function],  # Use ICL-enhanced reward function
+    args=grpo_config,
+    train_dataset=dataset,
+)
 
-# Run the integrated training
-run_grpo_training_with_icl()
+print("🎮 Starting GRPO Code Game with ICL Memory Training")
+
+# Run GRPO training - this will automatically call our ICL-enhanced reward function
+print("🏋️ Starting GRPO training with ICL-enhanced rewards...")
+grpo_trainer.train()
 
 print("🏁 GRPO Code Game with ICL Memory training completed!")
 
