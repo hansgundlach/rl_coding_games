@@ -747,13 +747,6 @@ if offline_mode:
 
 grpo_config = GRPOConfig(**training_args)
 
-grpo_trainer = GRPOTrainer(
-    model=generator_model,
-    reward_funcs=[grpo_reward_function],
-    args=grpo_config,
-    train_dataset=dataset,
-)
-
 print("🎮 Starting GRPO Code Game with ICL Memory Training")
 
 # Initialize wandb run (only if W&B is enabled by user)
