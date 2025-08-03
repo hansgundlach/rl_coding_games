@@ -733,8 +733,6 @@ grpo_config = GRPOConfig(**training_args)
 
 grpo_trainer = GRPOTrainer(
     model=generator_model,
-    tokenizer=generator_tokenizer,
-    config=grpo_config,
     reward_funcs=[grpo_reward_function],
     args=grpo_config,
     train_dataset=dataset,
