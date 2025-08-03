@@ -62,8 +62,14 @@ training:
   # Checkpointing and logging
   save_interval: 20                 # Save checkpoint every N steps
   checkpoint_dir: "checkpoints/spiral_code_game"
-  max_games_to_show: 2              # Show detailed logs for first N games per step
-  show_all_games: false             # Set to true to show all games (can be very verbose)
+
+# Debug Configuration
+debug:
+  show_detailed_games: 2            # Number of games per step to show detailed results
+  max_code_chars: 500               # Maximum characters of code to display
+  show_full_responses: false        # Show full model responses (can be very long)
+  show_execution_details: true      # Show code execution results and errors
+  show_all_games: false             # Legacy: show all games (very verbose)
 
 # Evaluation configuration
 evaluation:

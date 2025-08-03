@@ -95,3 +95,10 @@ vllm:
   integration:
     use_for_grpo_completions: false
     log_performance_comparison: false
+
+# Debug Configuration
+debug:
+  show_detailed_games: 2            # Number of games per step to show detailed results
+  max_code_chars: 500               # Maximum characters of code to display
+  show_full_responses: false        # Show full model responses (can be very long)
+  show_execution_details: true      # Show code execution results and errors

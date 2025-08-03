@@ -663,31 +663,53 @@ for step in range(num_steps):
         else:
             execution_failures += 1
 
-        # Show detailed results for first few games
-        if game_idx < 2:  # Show first 2 games
+        # Show detailed results for first few games (configurable)
+        debug_config = config.get("debug", {})
+        show_detailed_games = debug_config.get("show_detailed_games", 2)
+        max_code_chars = debug_config.get("max_code_chars", 500)
+        show_full_responses = debug_config.get("show_full_responses", False)
+        show_execution_details = debug_config.get("show_execution_details", True)
+        
+        if game_idx < show_detailed_games:
             print(f"\n{'='*60}")
             print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
             print(f"{'='*60}")
 
-            # Show player strategies (truncated)
+            # Show player strategies
             print("🤖 Player 1 Strategy:")
-            print(f"   Code: {trajectory.player1_data['code'][:100]}...")
+            if show_full_responses:
+                print(f"   Full Response: {trajectory.player1_data['response']}")
+            
+            player1_code = trajectory.player1_data['code']
+            if len(player1_code) > max_code_chars:
+                print(f"   Code: {player1_code[:max_code_chars]}... [truncated]")
+            else:
+                print(f"   Code: {player1_code}")
+            
             print(
                 f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}"
             )
-            if not trajectory.player1_data["compilation_success"]:
+            if not trajectory.player1_data["compilation_success"] and show_execution_details:
                 print(f"   Error: {trajectory.player1_data['compilation_error']}")
 
             print("🤖 Player 2 Strategy:")
-            print(f"   Code: {trajectory.player2_data['code'][:100]}...")
+            if show_full_responses:
+                print(f"   Full Response: {trajectory.player2_data['response']}")
+            
+            player2_code = trajectory.player2_data['code']
+            if len(player2_code) > max_code_chars:
+                print(f"   Code: {player2_code[:max_code_chars]}... [truncated]")
+            else:
+                print(f"   Code: {player2_code}")
+            
             print(
                 f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
             )
-            if not trajectory.player2_data["compilation_success"]:
+            if not trajectory.player2_data["compilation_success"] and show_execution_details:
                 print(f"   Error: {trajectory.player2_data['compilation_error']}")
 
             # Show game results
-            if (
+            if show_execution_details and (
                 hasattr(trajectory.game_result, "game_data")
                 and "final_payoffs" in trajectory.game_result.game_data
             ):

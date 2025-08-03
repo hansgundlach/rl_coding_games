@@ -921,6 +921,62 @@ def icl_enhanced_reward_function(completions, **kwargs):
             f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)"
         )
 
+    # Debug: Show detailed results for first few games
+    debug_config = config.get("debug", {})
+    show_detailed = debug_config.get("show_detailed_games", 2)
+    max_code_chars = debug_config.get("max_code_chars", 500)
+    show_full_responses = debug_config.get("show_full_responses", False)
+    show_execution_details = debug_config.get("show_execution_details", True)
+    
+    if show_detailed > 0:
+        print(f"\n{'='*80}")
+        print(f"🔍 DETAILED GAME RESULTS (showing {min(show_detailed, len(completions))} games)")
+        print(f"{'='*80}")
+        
+        for i in range(min(show_detailed, len(completions))):
+            completion = completions[i]
+            reward = rewards[i]
+            
+            print(f"\n🎮 Game {i+1}/{len(completions)} - Reward: {reward:+.2f}")
+            print("-" * 60)
+            
+            # Extract and show code
+            code = extract_code_from_response(completion)
+            prediction = extract_prediction_from_response(completion)
+            
+            if show_full_responses:
+                print(f"📝 Full Response:")
+                print(f"```\n{completion}\n```")
+            
+            print(f"🤖 Generated Code ({len(code)} chars):")
+            display_code = code[:max_code_chars] + ("..." if len(code) > max_code_chars else "")
+            print(f"```python\n{display_code}\n```")
+            
+            print(f"🎯 Generator Prediction: '{prediction}'")
+            
+            if show_execution_details and code:
+                # Execute and show results
+                execution_result = safe_execute_code(code, config["game"]["timeout"])
+                actual_output = execution_result["output"] if execution_result["success"] else ""
+                
+                print(f"🔧 Execution Results:")
+                print(f"   Success: {'✅' if execution_result['success'] else '❌'}")
+                print(f"   Runtime: {execution_result['execution_time']:.3f}s")
+                
+                if execution_result["success"]:
+                    print(f"   Actual Output: '{actual_output}'")
+                else:
+                    error_msg = execution_result["error"][:200] + ("..." if len(execution_result["error"]) > 200 else "")
+                    print(f"   Error: {error_msg}")
+                
+                # Show guesser prediction if we have one
+                if hasattr(icl_enhanced_reward_function, '_last_guesser_predictions'):
+                    guesser_pred = icl_enhanced_reward_function._last_guesser_predictions.get(i, "Unknown")
+                    print(f"🤔 Guesser Prediction: '{guesser_pred}'")
+                    print(f"📊 Predictions Match: {'✅' if guesser_pred.strip() == actual_output.strip() else '❌'}")
+        
+        print(f"{'='*80}")
+
     print(
         f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {sum(rewards)/len(rewards):.2f}"
     )

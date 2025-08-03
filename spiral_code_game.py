@@ -850,11 +850,13 @@ else:
 # Training parameters
 num_steps = config["training"]["num_steps"]
 
-# Add logging configuration
-max_games_to_show = config["training"].get(
-    "max_games_to_show", 2
-)  # Show first 2 games per step
-show_all_games = config["training"].get("show_all_games", False)  # Override to show all
+# Add debug configuration
+debug_config = config.get("debug", {})
+max_games_to_show = debug_config.get("show_detailed_games", 2)  # Show first N games per step
+show_all_games = debug_config.get("show_all_games", False)  # Override to show all
+max_code_chars = debug_config.get("max_code_chars", 500)  # Max characters of code to display
+show_full_responses = debug_config.get("show_full_responses", False)  # Show full model responses
+show_execution_details = debug_config.get("show_execution_details", True)  # Show execution details
 
 # Adaptive batch size based on GPU memory
 if platform_info["gpu_type"] == "V100":
@@ -919,27 +921,39 @@ for step in range(num_steps):
         should_show_game = show_all_games or (game_idx < max_games_to_show)
 
         if should_show_game:
-            print(f"\n{'='*60}")
+            print(f"\n{'='*80}")
             print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
-            print(f"{'='*60}")
+            print(f"{'='*80}")
 
-            # Show generated code
-            print("🤖 Generated Code:")
+            # Show full responses if requested
+            if show_full_responses:
+                print(f"📝 Generator Full Response:")
+                print(f"```\n{trajectory.generator_data.get('response', 'N/A')}\n```")
+                print(f"📝 Guesser Full Response:")
+                print(f"```\n{trajectory.guesser_data.get('response', 'N/A')}\n```")
+
+            # Show generated code (with length limit)
+            code = trajectory.generator_data["code"]
+            print(f"🤖 Generated Code ({len(code)} chars):")
+            display_code = code[:max_code_chars] + ("..." if len(code) > max_code_chars else "")
             print("```python")
-            print(trajectory.generator_data["code"])
+            print(display_code)
             print("```")
 
             # Show execution results
-            exec_result = trajectory.execution_result
-            print(f"\n🔧 Execution Results:")
-            print(f"   Success: {'✅' if exec_result['success'] else '❌'}")
-            if exec_result["success"]:
-                print(f"   Actual Output: '{trajectory.game_outcome['actual_output']}'")
-                print(f"   Execution time: {exec_result['execution_time']:.3f}s")
-            else:
-                print(f"   Error: {exec_result['error'][:100]}...")
-                if exec_result["timeout"]:
-                    print(f"   ⏰ Timed out after {exec_result['execution_time']:.1f}s")
+            if show_execution_details:
+                exec_result = trajectory.execution_result
+                print(f"\n🔧 Execution Results:")
+                print(f"   Success: {'✅' if exec_result['success'] else '❌'}")
+                print(f"   Runtime: {exec_result['execution_time']:.3f}s")
+                
+                if exec_result["success"]:
+                    print(f"   Actual Output: '{trajectory.game_outcome['actual_output']}'")
+                else:
+                    error_msg = exec_result['error'][:200] + ("..." if len(exec_result['error']) > 200 else "")
+                    print(f"   Error: {error_msg}")
+                    if exec_result["timeout"]:
+                        print(f"   ⏰ Timed out after {exec_result['execution_time']:.1f}s")
 
             # Show both predictions
             print(f"\n🎯 Predictions:")
