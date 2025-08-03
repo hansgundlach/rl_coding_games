@@ -90,7 +90,7 @@ evaluation:
   enabled_final: true
   enabled_interval: true
   eval_interval_steps: 10
-  num_questions: 5
+  num_questions: 20
   temperature: 0.2
   max_new_tokens: 512
   timeout_seconds: 10
