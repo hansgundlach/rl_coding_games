@@ -644,7 +644,7 @@ def grpo_reward_function(completions, **kwargs):
         return [0.0] * len(completions)
 
 # Set up model cache directory
-cache_dir = config["model"]["cache_dir"]
+cache_dir = config["generator_model"]["cache_dir"]
 os.makedirs(cache_dir, exist_ok=True)
 
 # Load generator model (trainable with GRPO)
