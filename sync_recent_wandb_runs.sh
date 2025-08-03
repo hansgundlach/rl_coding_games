@@ -12,8 +12,11 @@ if [ ! -d "wandb" ]; then
     exit 1
 fi
 
+# Change to wandb directory
+cd wandb
+
 # Find all offline-run directories, sort by modification time (newest first) and take the first 5
-recent_runs=$(find wandb -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n' | sort -rn | head -5 | cut -d' ' -f2-)
+recent_runs=$(find . -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n' | sort -rn | head -5 | cut -d' ' -f2-)
 
 # Check if any runs were found
 if [ -z "$recent_runs" ]; then
@@ -23,7 +26,7 @@ if [ -z "$recent_runs" ]; then
 fi
 
 echo "📋 Found the following recent offline runs:"
-echo "$recent_runs" | nl -w2 -s'. '
+echo "$recent_runs" | sed 's|^\./||' | nl -w2 -s'. '
 echo
 
 # Sync each run
