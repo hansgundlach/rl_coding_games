@@ -729,6 +729,18 @@ if platform_info["gpu_type"] == "V100":
     training_args["gradient_accumulation_steps"] = max(training_args.get("gradient_accumulation_steps", 1), 4)
     print("🔧 Adjusted training args for V100 memory constraints")
 
+# Fix model config path for GRPOTrainer if in offline mode
+if offline_mode:
+    # Point the model config to actual cached snapshot directory so GRPOTrainer can find tokenizer files locally
+    cached_model_dirs = glob.glob(
+        os.path.join(
+            cache_dir, f"models--{generator_model_id.replace('/', '--')}", "snapshots", "*"
+        )
+    )
+    if cached_model_dirs:
+        generator_model.config._name_or_path = cached_model_dirs[0]
+        print(f"🔧 Set generator model config path to: {cached_model_dirs[0]}")
+
 grpo_config = GRPOConfig(**training_args)
 
 grpo_trainer = GRPOTrainer(
