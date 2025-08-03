@@ -100,7 +100,8 @@ vllm:
   gpu_memory_utilization: 0.85
   max_model_len: 2048
   integration:
-    use_for_grpo_completions: false
+    use_for_grpo_completions: true
+    use_for_evaluation: true           # <-- Add this line
     log_performance_comparison: false
 
 # Debug Configuration
