@@ -979,7 +979,7 @@ with open(f"{final_checkpoint_dir}/icl_memory.json", "w") as f:
             }
             for ex in latest_memory.examples
         ],
-        "games_played": games_played,
+        "games_played": getattr(icl_enhanced_reward_function, 'games_played', 0),
     }
     json.dump(memory_data, f, indent=2)
 
