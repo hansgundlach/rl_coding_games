@@ -71,7 +71,7 @@ evaluation:
   enabled: true
   enabled_initial: true
   enabled_final: true
-  enabled_interval: false
+  enabled_interval: true
   eval_interval_steps: 10
   num_questions: 5
   temperature: 0.2
