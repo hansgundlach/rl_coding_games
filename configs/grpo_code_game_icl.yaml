@@ -65,17 +65,7 @@ training_args:
   # Additional GRPO hyperparameters (all set to library defaults)
   # Adjust these later to experiment without touching the code.
   epsilon: 0.2               # trust-region lower-bound (PPO-style clipping)
-  epsilon_high: null         # when null, uses same value as `epsilon`
-  delta: null                # set a float > 1+epsilon to enable two-sided clipping
   num_iterations: 1          # μ – number of optimisation mini-steps per batch
-  loss_type: "bnpo"         # "grpo", "bnpo", or "dr_grpo"
-  importance_sampling_level: "token"  # "token" or "sequence"
-  scale_rewards: true        # normalise rewards by std-dev (Dr-GRPO suggests false)
-  mask_truncated_completions: false    # ignore truncated samples in loss
-  sync_ref_model: false
-  ref_model_mixup_alpha: 0.6
-  ref_model_sync_steps: 512
-  top_entropy_quantile: 1.0  # 1.0 keeps all tokens; e.g. 0.2 keeps top-entropy tokens
   # ------------------------------------------------------------------
   output_dir: "./outputs/grpo_code_game_icl"
 
