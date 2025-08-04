@@ -643,6 +643,12 @@ for step in range(num_steps):
     successful_games = 0
     execution_failures = 0
 
+    # New statistics for noise and WSLS bot
+    total_noise_rounds = 0
+    games_with_noise = 0
+    wsls_bot_games = 0
+    wsls_bot_wins = 0
+
     for game_idx in range(games_per_step):
         trajectory = play_strategy_game(model, tokenizer, device, game_env)
         trajectories.append(trajectory)
@@ -663,50 +669,87 @@ for step in range(num_steps):
         else:
             execution_failures += 1
 
+        # Track noise and WSLS bot statistics
+        game_data = trajectory.game_result.game_data
+        if "noise_rounds" in game_data:
+            noise_rounds = game_data["noise_rounds"]
+            total_noise_rounds += noise_rounds
+            if noise_rounds > 0:
+                games_with_noise += 1
+
+        if game_data.get("wsls_bot_used", False):
+            wsls_bot_games += 1
+            # Check if WSLS bot (player 2) won
+            if p2_reward > p1_reward:
+                wsls_bot_wins += 1
+
         # Show detailed results for first few games (configurable)
         debug_config = config.get("debug", {})
         show_detailed_games = debug_config.get("show_detailed_games", 2)
         max_code_chars = debug_config.get("max_code_chars", 500)
         show_full_responses = debug_config.get("show_full_responses", False)
         show_execution_details = debug_config.get("show_execution_details", True)
-        
+
         if game_idx < show_detailed_games:
             print(f"\n{'='*60}")
             print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
+
+            # Show special game features
+            game_features = []
+            if game_data.get("wsls_bot_used", False):
+                game_features.append("🤖 WSLS Bot")
+            if game_data.get("noise_rounds", 0) > 0:
+                game_features.append(f"🎲 Noise ({game_data['noise_rounds']} rounds)")
+
+            if game_features:
+                print(f"Features: {' | '.join(game_features)}")
+
             print(f"{'='*60}")
 
             # Show player strategies
             print("🤖 Player 1 Strategy:")
             if show_full_responses:
                 print(f"   Full Response: {trajectory.player1_data['response']}")
-            
-            player1_code = trajectory.player1_data['code']
+
+            player1_code = trajectory.player1_data["code"]
             if len(player1_code) > max_code_chars:
                 print(f"   Code: {player1_code[:max_code_chars]}... [truncated]")
             else:
                 print(f"   Code: {player1_code}")
-            
+
             print(
                 f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}"
             )
-            if not trajectory.player1_data["compilation_success"] and show_execution_details:
+            if (
+                not trajectory.player1_data["compilation_success"]
+                and show_execution_details
+            ):
                 print(f"   Error: {trajectory.player1_data['compilation_error']}")
 
             print("🤖 Player 2 Strategy:")
-            if show_full_responses:
-                print(f"   Full Response: {trajectory.player2_data['response']}")
-            
-            player2_code = trajectory.player2_data['code']
-            if len(player2_code) > max_code_chars:
-                print(f"   Code: {player2_code[:max_code_chars]}... [truncated]")
+            if game_data.get("wsls_bot_used", False):
+                print("   Using WSLS (Win-Stay/Lose-Shift) Bot")
+                print(
+                    "   Strategy: Cooperate if last payoff ≥ 3, otherwise switch action"
+                )
             else:
-                print(f"   Code: {player2_code}")
-            
-            print(
-                f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
-            )
-            if not trajectory.player2_data["compilation_success"] and show_execution_details:
-                print(f"   Error: {trajectory.player2_data['compilation_error']}")
+                if show_full_responses:
+                    print(f"   Full Response: {trajectory.player2_data['response']}")
+
+                player2_code = trajectory.player2_data["code"]
+                if len(player2_code) > max_code_chars:
+                    print(f"   Code: {player2_code[:max_code_chars]}... [truncated]")
+                else:
+                    print(f"   Code: {player2_code}")
+
+                print(
+                    f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
+                )
+                if (
+                    not trajectory.player2_data["compilation_success"]
+                    and show_execution_details
+                ):
+                    print(f"   Error: {trajectory.player2_data['compilation_error']}")
 
             # Show game results
             if show_execution_details and (
@@ -741,6 +784,14 @@ for step in range(num_steps):
     rae_stats = rae.get_stats()
     success_rate = successful_games / games_per_step
 
+    # Calculate noise and WSLS bot statistics
+    avg_noise_rounds_per_game = (
+        total_noise_rounds / games_per_step if games_per_step > 0 else 0
+    )
+    noise_game_rate = games_with_noise / games_per_step if games_per_step > 0 else 0
+    wsls_bot_rate = wsls_bot_games / games_per_step if games_per_step > 0 else 0
+    wsls_bot_win_rate = wsls_bot_wins / wsls_bot_games if wsls_bot_games > 0 else 0
+
     stats = {
         "step": step,
         "loss": loss.item(),
@@ -749,6 +800,12 @@ for step in range(num_steps):
         "ties": ties,
         "success_rate": success_rate,
         "execution_failures": execution_failures,
+        "avg_noise_rounds_per_game": avg_noise_rounds_per_game,
+        "noise_game_rate": noise_game_rate,
+        "wsls_bot_rate": wsls_bot_rate,
+        "wsls_bot_win_rate": wsls_bot_win_rate,
+        "total_noise_rounds": total_noise_rounds,
+        "wsls_bot_games": wsls_bot_games,
         **rae_stats,
     }
 
@@ -761,6 +818,16 @@ for step in range(num_steps):
     print(
         f"📈 Baselines - P1: {rae_stats['baseline_player1']:.3f}, P2: {rae_stats['baseline_player2']:.3f}"
     )
+
+    # Print noise and WSLS bot statistics
+    if total_noise_rounds > 0 or wsls_bot_games > 0:
+        print(
+            f"🎲 Noise: {avg_noise_rounds_per_game:.1f} rounds/game avg, {noise_game_rate:.1%} games affected"
+        )
+        if wsls_bot_games > 0:
+            print(
+                f"🤖 WSLS bot: {wsls_bot_games}/{games_per_step} games ({wsls_bot_rate:.1%}), won {wsls_bot_win_rate:.1%}"
+            )
 
     if WANDB_ENABLED and wandb.run:
         wandb.log(stats)

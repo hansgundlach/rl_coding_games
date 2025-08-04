@@ -574,7 +574,7 @@ def play_self_play_game(model, tokenizer, device) -> GameTrajectory:
     )
 
 
-def compute_policy_gradient_loss(
+def compute_policy_gradient_loss_batched(
     model,
     tokenizer,
     trajectories: List[GameTrajectory],
@@ -582,12 +582,17 @@ def compute_policy_gradient_loss(
     device,
 ) -> torch.Tensor:
     """
-    Compute policy gradient loss using SPIRAL's RAE method with memory optimization.
+    Compute policy gradient loss using SPIRAL's RAE method with batched forward passes.
+    MAJOR MEMORY OPTIMIZATION: Single batched forward pass instead of separate passes.
     """
-    total_loss = torch.zeros(1, device=device, requires_grad=True)
-    num_updates = 0
 
-    # Process trajectories in smaller chunks to avoid memory accumulation
+    # Step 1: Collect all trajectory data and update RAE baselines
+    all_input_ids = []
+    all_attention_masks = []
+    all_response_starts = []
+    all_response_targets = []
+    all_advantages = []
+
     for trajectory in trajectories:
         for player_id in [0, 1]:
             if not trajectory.player_trajectories[player_id]:
@@ -600,13 +605,8 @@ def compute_policy_gradient_loss(
 
             # Compute advantage using RAE
             advantage = rae.compute_advantage(player_id, player_reward)
-            # Convert advantage to a detached PyTorch tensor
-            advantage_tensor = torch.tensor(
-                advantage, device=device, dtype=torch.float32
-            ).detach()
 
-            # Process moves one at a time to minimize memory usage
-            trajectory_loss = torch.zeros(1, device=device, requires_grad=True)
+            # Process each move for this player
             for move_data in trajectory.player_trajectories[player_id]:
                 observation = move_data["observation"]
                 response = move_data["response"]
@@ -619,68 +619,87 @@ def compute_policy_gradient_loss(
                     response, return_tensors="pt", truncation=True, max_length=64
                 )
 
-                if device.type == "cuda":
-                    inputs = {k: v.to(device) for k, v in inputs.items()}
-                    response_tokens = {
-                        k: v.to(device) for k, v in response_tokens.items()
-                    }
-
-                # Skip if response is too short to avoid errors
+                # Skip if response is too short
                 if response_tokens["input_ids"].shape[1] == 0:
                     continue
 
-                # Forward pass
-                with torch.no_grad():
-                    # Get full sequence (prompt + response)
-                    full_input_ids = torch.cat(
-                        [inputs["input_ids"], response_tokens["input_ids"]], dim=1
-                    )
-                    full_attention_mask = torch.ones_like(full_input_ids)
-
-                # Ensure correct dtype for input_ids (must be long for embedding layer)
-                full_input_ids = full_input_ids.long()
-                full_attention_mask = full_attention_mask.long()
-
-                # Forward pass for loss computation (enable gradients for this specific pass)
-                outputs = model(
-                    input_ids=full_input_ids, attention_mask=full_attention_mask
+                # Prepare full sequence (prompt + response)
+                full_input_ids = torch.cat(
+                    [inputs["input_ids"], response_tokens["input_ids"]], dim=1
                 )
-                logits = outputs.logits
+                full_attention_mask = torch.ones_like(full_input_ids)
 
-                # Compute log probabilities for response tokens only
-                response_start_idx = inputs["input_ids"].shape[1]
-                response_logits = logits[
-                    :, response_start_idx - 1 : -1, :
-                ]  # Shift for next-token prediction
-                response_targets = response_tokens["input_ids"][:, :]
+                # Store data for batching
+                all_input_ids.append(
+                    full_input_ids.squeeze(0)
+                )  # Remove batch dim for batching
+                all_attention_masks.append(full_attention_mask.squeeze(0))
+                all_response_starts.append(inputs["input_ids"].shape[1])
+                all_response_targets.append(response_tokens["input_ids"].squeeze(0))
+                all_advantages.append(advantage)
 
-                # Ensure dimensions match
-                min_len = min(response_logits.shape[1], response_targets.shape[1])
-                response_logits = response_logits[:, :min_len, :]
-                response_targets = response_targets[:, :min_len]
+    if not all_input_ids:
+        return torch.zeros(1, device=device, requires_grad=True)
 
-                # Compute log probabilities
-                log_probs = F.log_softmax(response_logits, dim=-1)
-                token_log_probs = log_probs.gather(
-                    2, response_targets.unsqueeze(-1)
-                ).squeeze(-1)
+    # Step 2: Pad sequences to same length for batching
+    max_seq_len = max(seq.shape[0] for seq in all_input_ids)
+    batch_size = len(all_input_ids)
 
-                # REINFORCE loss: -advantage * sum(log_probs)
-                sequence_log_prob = token_log_probs.sum()
-                loss = (
-                    -advantage_tensor * sequence_log_prob
-                )  # Use the tensor version of advantage
+    # Create padded batch tensors
+    batch_input_ids = torch.zeros(
+        batch_size, max_seq_len, dtype=torch.long, device=device
+    )
+    batch_attention_masks = torch.zeros(
+        batch_size, max_seq_len, dtype=torch.long, device=device
+    )
 
-                trajectory_loss = trajectory_loss + loss
-                num_updates += 1
+    for i, (input_ids, attention_mask) in enumerate(
+        zip(all_input_ids, all_attention_masks)
+    ):
+        seq_len = input_ids.shape[0]
+        batch_input_ids[i, :seq_len] = input_ids.to(device)
+        batch_attention_masks[i, :seq_len] = attention_mask.to(device)
 
-                # Clear intermediate tensors to free memory
-                del outputs, logits, response_logits, log_probs, token_log_probs
-                torch.cuda.empty_cache()
+    # Step 3: Single batched forward pass (HUGE memory savings!)
+    outputs = model(input_ids=batch_input_ids, attention_mask=batch_attention_masks)
+    batch_logits = outputs.logits  # [batch_size, max_seq_len, vocab_size]
 
-            total_loss = total_loss + trajectory_loss
+    # Step 4: Compute losses for each sequence in the batch
+    total_loss = torch.zeros(1, device=device, requires_grad=True)
 
-    return total_loss / max(num_updates, 1)
+    for i in range(batch_size):
+        response_start_idx = all_response_starts[i]
+        response_targets = all_response_targets[i].to(device)
+        advantage = all_advantages[i]
+
+        # Extract logits for this sequence's response tokens
+        sequence_logits = batch_logits[i]  # [max_seq_len, vocab_size]
+        response_logits = sequence_logits[
+            response_start_idx - 1 : response_start_idx - 1 + response_targets.shape[0]
+        ]
+
+        # Ensure dimensions match
+        min_len = min(response_logits.shape[0], response_targets.shape[0])
+        if min_len == 0:
+            continue
+
+        response_logits = response_logits[:min_len]  # [min_len, vocab_size]
+        response_targets = response_targets[:min_len]  # [min_len]
+
+        # Compute log probabilities
+        log_probs = F.log_softmax(response_logits, dim=-1)  # [min_len, vocab_size]
+        token_log_probs = log_probs.gather(1, response_targets.unsqueeze(-1)).squeeze(
+            -1
+        )  # [min_len]
+
+        # REINFORCE loss: -advantage * sum(log_probs)
+        sequence_log_prob = token_log_probs.sum()
+        advantage_tensor = torch.tensor(advantage, device=device, dtype=torch.float32)
+        loss = -advantage_tensor * sequence_log_prob
+
+        total_loss = total_loss + loss
+
+    return total_loss / max(batch_size, 1)
 
 
 # Set up model cache directory
@@ -802,7 +821,9 @@ for step in range(num_steps):
                     total_invalid_moves += 1
 
     # Compute policy gradient loss using RAE
-    loss = compute_policy_gradient_loss(model, tokenizer, trajectories, rae, device)
+    loss = compute_policy_gradient_loss_batched(
+        model, tokenizer, trajectories, rae, device
+    )
 
     # Update model
     optimizer.zero_grad()
