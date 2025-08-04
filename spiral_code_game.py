@@ -369,6 +369,126 @@ def safe_execute_code(code: str, timeout: int = 5) -> dict:
     return result
 
 
+def validate_number_list_format(output_str: str) -> dict:
+    """
+    Validate that output is a list of numbers between 2 and 50 numbers long.
+
+    Returns:
+        dict: {
+            'is_valid': bool,
+            'error_message': str,
+            'parsed_list': List[float] or None,
+            'list_length': int
+        }
+    """
+    result = {
+        "is_valid": False,
+        "error_message": "",
+        "parsed_list": None,
+        "list_length": 0,
+    }
+
+    if not output_str.strip():
+        result["error_message"] = "Empty output"
+        return result
+
+    try:
+        # Try to parse as a Python list/array
+        import ast
+        import re
+
+        # Clean the output string - remove extra whitespace and newlines
+        cleaned = output_str.strip()
+
+        # Try different common list formats
+        possible_formats = [
+            cleaned,  # As is
+            (
+                f"[{cleaned}]"
+                if not (cleaned.startswith("[") and cleaned.endswith("]"))
+                else cleaned
+            ),  # Wrap in brackets
+            cleaned.replace("(", "[").replace(
+                ")", "]"
+            ),  # Convert parentheses to brackets
+        ]
+
+        parsed_list = None
+        for format_attempt in possible_formats:
+            try:
+                # Use ast.literal_eval for safe evaluation
+                parsed_list = ast.literal_eval(format_attempt)
+                if isinstance(parsed_list, (list, tuple)):
+                    parsed_list = list(parsed_list)
+                    break
+                elif isinstance(parsed_list, (int, float)):
+                    # Single number - convert to list
+                    parsed_list = [parsed_list]
+                    break
+            except:
+                continue
+
+        # If ast.literal_eval failed, try regex parsing for space/comma separated numbers
+        if parsed_list is None:
+            # Extract numbers using regex
+            number_pattern = r"-?\d+\.?\d*"
+            numbers = re.findall(number_pattern, cleaned)
+            if numbers:
+                try:
+                    parsed_list = [float(num) for num in numbers]
+                except:
+                    pass
+
+        if parsed_list is None:
+            result["error_message"] = "Could not parse as list of numbers"
+            return result
+
+        # Validate all elements are numbers
+        if not all(isinstance(x, (int, float)) for x in parsed_list):
+            result["error_message"] = "Contains non-numeric values"
+            return result
+
+        # Check length constraint (2-50 numbers)
+        list_length = len(parsed_list)
+        if list_length < 2:
+            result["error_message"] = (
+                f"List too short: {list_length} numbers (minimum 2)"
+            )
+            result["list_length"] = list_length
+            return result
+        elif list_length > 50:
+            result["error_message"] = (
+                f"List too long: {list_length} numbers (maximum 50)"
+            )
+            result["list_length"] = list_length
+            return result
+
+        # All validations passed
+        result["is_valid"] = True
+        result["parsed_list"] = parsed_list
+        result["list_length"] = list_length
+
+    except Exception as e:
+        result["error_message"] = f"Parsing error: {str(e)}"
+
+    return result
+
+
+def normalize_number_list_output(output_str: str) -> str:
+    """
+    Normalize a number list output to a standard format for comparison.
+
+    Returns the list as a string in format: "[1.0, 2.0, 3.0]"
+    """
+    validation = validate_number_list_format(output_str)
+    if validation["is_valid"]:
+        # Convert to consistent format with 1 decimal place
+        normalized = [round(float(x), 1) for x in validation["parsed_list"]]
+        return str(normalized)
+    else:
+        return output_str.strip()
+
+
 @dataclass
 class CodeGameTrajectory:
     """Store trajectory data for a single code generation game."""
@@ -410,29 +530,36 @@ class CodeGenerationGame:
 2. Correctly predict what your code will output
 3. Write code whose output Player 2 will struggle to predict correctly
 
-Write a complete Python program that demonstrates a programming concept or solves a simple problem.
-The program should be executable and produce some output.
+IMPORTANT FORMAT REQUIREMENT:
+Your code MUST output a list of numbers that is between 2 and 50 numbers long.
+Examples of valid outputs:
+- [1, 2, 3, 4, 5]
+- [3.14, 2.71, 1.41]
+- [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-Focus on writing clean, working code that has interesting or non-obvious output that you can predict but Player 2 cannot. Player 2 only sees the code, not the output or your thoughts ie hide information that will help them predict the output.
+Write a complete Python program that generates and prints a list of numbers.
+The program should be executable and produce a list output in the required format.
 
+Focus on writing clean, working code that produces an interesting or non-obvious list that you can predict but Player 2 cannot. Player 2 only sees the code, not the output or your thoughts.
+
+Examples of good strategies:
+- Mathematical sequences (Fibonacci, primes, factorials)
+- Calculations with specific numeric results
+- List comprehensions with non-obvious patterns
+- String-to-number conversions
+- Date/time calculations that produce numbers
 
 Format your response with the Python code AND your prediction:
 ```python
-# Your code here
+# Your code here - must print a list of 2-50 numbers
+print([...])  # Your list here
 ```
 
 <prediction>
-[exact output your code will produce]
+[exact list your code will produce, e.g., [1, 2, 3, 4, 5]]
 </prediction>
 
-Write a Python program and predict its output:"""
-
-    # Examples of good strategies:
-    # - Mathematical calculations with specific but non-obvious results
-    # - String manipulations with precise but surprising output
-    # - List operations with specific final values that require careful tracing
-    # - Simple algorithms with concrete but non-intuitive results
-    # - Basic data structures with specific content that requires understanding the logic
+Write a Python program that outputs a list of numbers and predict its output:"""
 
     def get_guesser_prompt(self, generator_code: str) -> str:
         """Get prompt for Player 2 (output guesser)."""
@@ -444,17 +571,27 @@ Write a Python program and predict its output:"""
 
 Your goal is to predict EXACTLY what this code will output when executed.
 
+IMPORTANT FORMAT REQUIREMENT:
+The code should output a list of numbers that is between 2 and 50 numbers long.
+Your prediction must also be in this format.
+
+Examples of valid predictions:
+- [1, 2, 3, 4, 5]
+- [3.14, 2.71, 1.41]
+- [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
 Think step by step about what this code does:
 1. Analyze each line of code
 2. Trace through the execution
-3. Determine the final output
+3. Determine the final list output
+4. Count the numbers in your predicted list (must be 2-50)
 
 Provide your prediction in this exact format:
 <prediction>
-[exact output here]
+[exact list here, e.g., [1, 2, 3, 4, 5]]
 </prediction>
 
-What will this code output?"""
+What list of numbers will this code output?"""
 
     def extract_code_from_response(self, response: str) -> str:
         """Extract Python code from model response."""
@@ -581,63 +718,142 @@ What will this code output?"""
                 "generator_reward": rewards["generator"],
                 "guesser_reward": rewards["guesser"],
                 "code_executable": self.execution_result["success"],
-                "generator_prediction_correct": rewards[
-                    "generator_prediction_correct"
-                ],  # NEW
+                "generator_prediction_correct": rewards["generator_prediction_correct"],
                 "guesser_prediction_correct": rewards["guesser_prediction_correct"],
                 "actual_output": self.actual_output,
+                "output_format_valid": rewards["output_format_valid"],
+                "generator_prediction_format_valid": rewards[
+                    "generator_prediction_format_valid"
+                ],
+                "guesser_prediction_format_valid": rewards[
+                    "guesser_prediction_format_valid"
+                ],
+                "output_validation_error": rewards["output_validation_error"],
+                "generator_prediction_validation_error": rewards[
+                    "generator_prediction_validation_error"
+                ],
+                "guesser_prediction_validation_error": rewards[
+                    "guesser_prediction_validation_error"
+                ],
             },
             execution_result=self.execution_result,
         )
 
     def calculate_rewards(self) -> Dict:
         """
-        Calculate rewards for both players under new rules.
+        Calculate rewards for both players with format validation penalties.
 
         Player 1 (Generator): Gets positive reward if:
         - Code is executable AND
-        - Their prediction is correct AND
+        - Output follows list format (2-50 numbers) AND
+        - Their prediction is correct AND follows format AND
         - Player 2's prediction is wrong
 
         Player 2 (Guesser): Gets positive reward if:
-        - Their prediction is correct
+        - Their prediction is correct AND follows format
+
+        FORMAT PENALTIES:
+        - Heavy penalty (-1.0) for wrong format
+        - Code that doesn't produce valid list format gets -1.0
+        - Predictions that don't follow list format get -1.0
         """
         # Check if code is executable
         code_executable = self.execution_result["success"]
 
-        # Check prediction correctness (exact match)
-        generator_prediction_correct = (
-            self.generator_prediction.strip() == self.actual_output.strip()
+        # Validate output format
+        output_validation = (
+            validate_number_list_format(self.actual_output)
             if code_executable
-            else False
+            else {"is_valid": False, "error_message": "Code not executable"}
+        )
+        output_format_valid = output_validation["is_valid"]
+
+        # Validate prediction formats
+        generator_prediction_validation = validate_number_list_format(
+            self.generator_prediction
+        )
+        generator_prediction_format_valid = generator_prediction_validation["is_valid"]
+
+        guesser_prediction_validation = validate_number_list_format(
+            self.guesser_prediction
+        )
+        guesser_prediction_format_valid = guesser_prediction_validation["is_valid"]
+
+        # Normalize outputs for comparison if they're valid
+        if code_executable and output_format_valid:
+            normalized_actual = normalize_number_list_output(self.actual_output)
+        else:
+            normalized_actual = self.actual_output.strip()
+
+        if generator_prediction_format_valid:
+            normalized_generator_pred = normalize_number_list_output(
+                self.generator_prediction
+            )
+        else:
+            normalized_generator_pred = self.generator_prediction.strip()
+
+        if guesser_prediction_format_valid:
+            normalized_guesser_pred = normalize_number_list_output(
+                self.guesser_prediction
+            )
+        else:
+            normalized_guesser_pred = self.guesser_prediction.strip()
+
+        # Check prediction correctness (using normalized comparison)
+        generator_prediction_correct = (
+            code_executable
+            and output_format_valid
+            and generator_prediction_format_valid
+            and normalized_generator_pred == normalized_actual
         )
 
         guesser_prediction_correct = (
-            self.guesser_prediction.strip() == self.actual_output.strip()
-            if code_executable
-            else False
+            code_executable
+            and output_format_valid
+            and guesser_prediction_format_valid
+            and normalized_guesser_pred == normalized_actual
         )
 
-        # NEW REWARD STRUCTURE:
-        # Generator: +1 if (executable AND self-correct AND guesser-wrong), -1 otherwise
-        generator_reward = (
-            1.0
-            if (
-                code_executable
-                and generator_prediction_correct
-                and not guesser_prediction_correct
+        # REWARD STRUCTURE WITH FORMAT PENALTIES:
+        # Generator penalties:
+        if not code_executable:
+            generator_reward = -1.0  # Code doesn't run
+        elif not output_format_valid:
+            generator_reward = -1.0  # Code output wrong format
+        elif not generator_prediction_format_valid:
+            generator_reward = -1.0  # Generator prediction wrong format
+        else:
+            # Code runs and formats are valid - check game outcome
+            generator_reward = (
+                1.0
+                if (generator_prediction_correct and not guesser_prediction_correct)
+                else -1.0
             )
-            else -1.0
-        )
 
-        # Guesser: +1 if correct prediction, -1 otherwise
-        guesser_reward = 1.0 if guesser_prediction_correct else -1.0
+        # Guesser penalties:
+        if not guesser_prediction_format_valid:
+            guesser_reward = -1.0  # Guesser prediction wrong format
+        elif not code_executable or not output_format_valid:
+            guesser_reward = -1.0  # Can't win if generator's code/output is invalid
+        else:
+            # Formats are valid - check prediction correctness
+            guesser_reward = 1.0 if guesser_prediction_correct else -1.0
 
         return {
             "generator": generator_reward,
             "guesser": guesser_reward,
             "generator_prediction_correct": generator_prediction_correct,
             "guesser_prediction_correct": guesser_prediction_correct,
+            "output_format_valid": output_format_valid,
+            "generator_prediction_format_valid": generator_prediction_format_valid,
+            "guesser_prediction_format_valid": guesser_prediction_format_valid,
+            "output_validation_error": output_validation.get("error_message", ""),
+            "generator_prediction_validation_error": generator_prediction_validation.get(
+                "error_message", ""
+            ),
+            "guesser_prediction_validation_error": guesser_prediction_validation.get(
+                "error_message", ""
+            ),
         }
 
 
@@ -852,11 +1068,19 @@ num_steps = config["training"]["num_steps"]
 
 # Add debug configuration
 debug_config = config.get("debug", {})
-max_games_to_show = debug_config.get("show_detailed_games", 2)  # Show first N games per step
+max_games_to_show = debug_config.get(
+    "show_detailed_games", 2
+)  # Show first N games per step
 show_all_games = debug_config.get("show_all_games", False)  # Override to show all
-max_code_chars = debug_config.get("max_code_chars", 500)  # Max characters of code to display
-show_full_responses = debug_config.get("show_full_responses", False)  # Show full model responses
-show_execution_details = debug_config.get("show_execution_details", True)  # Show execution details
+max_code_chars = debug_config.get(
+    "max_code_chars", 500
+)  # Max characters of code to display
+show_full_responses = debug_config.get(
+    "show_full_responses", False
+)  # Show full model responses
+show_execution_details = debug_config.get(
+    "show_execution_details", True
+)  # Show execution details
 
 # Adaptive batch size based on GPU memory
 if platform_info["gpu_type"] == "V100":
@@ -910,8 +1134,14 @@ for step in range(num_steps):
     generator_wins = 0
     guesser_wins = 0
     code_executable_count = 0
-    generator_correct_predictions = 0  # NEW
-    guesser_correct_predictions = 0  # NEW
+    generator_correct_predictions = 0
+    guesser_correct_predictions = 0
+
+    # Format validation tracking
+    valid_output_format_count = 0
+    valid_generator_prediction_format_count = 0
+    valid_guesser_prediction_format_count = 0
+    format_violation_count = 0
 
     for game_idx in range(games_per_step):
         trajectory = game.play_game(model, tokenizer, device)
@@ -935,7 +1165,9 @@ for step in range(num_steps):
             # Show generated code (with length limit)
             code = trajectory.generator_data["code"]
             print(f"🤖 Generated Code ({len(code)} chars):")
-            display_code = code[:max_code_chars] + ("..." if len(code) > max_code_chars else "")
+            display_code = code[:max_code_chars] + (
+                "..." if len(code) > max_code_chars else ""
+            )
             print("```python")
             print(display_code)
             print("```")
@@ -946,16 +1178,22 @@ for step in range(num_steps):
                 print(f"\n🔧 Execution Results:")
                 print(f"   Success: {'✅' if exec_result['success'] else '❌'}")
                 print(f"   Runtime: {exec_result['execution_time']:.3f}s")
-                
+
                 if exec_result["success"]:
-                    print(f"   Actual Output: '{trajectory.game_outcome['actual_output']}'")
+                    print(
+                        f"   Actual Output: '{trajectory.game_outcome['actual_output']}'"
+                    )
                 else:
-                    error_msg = exec_result['error'][:200] + ("..." if len(exec_result['error']) > 200 else "")
+                    error_msg = exec_result["error"][:200] + (
+                        "..." if len(exec_result["error"]) > 200 else ""
+                    )
                     print(f"   Error: {error_msg}")
                     if exec_result["timeout"]:
-                        print(f"   ⏰ Timed out after {exec_result['execution_time']:.1f}s")
+                        print(
+                            f"   ⏰ Timed out after {exec_result['execution_time']:.1f}s"
+                        )
 
-            # Show both predictions
+            # Show both predictions and format validation
             print(f"\n🎯 Predictions:")
             print(
                 f"   Generator predicted: '{trajectory.generator_data['prediction']}'"
@@ -963,10 +1201,33 @@ for step in range(num_steps):
             print(
                 f"   Generator correct: {'✅' if trajectory.game_outcome['generator_prediction_correct'] else '❌'}"
             )
+            print(
+                f"   Generator format valid: {'✅' if trajectory.game_outcome['generator_prediction_format_valid'] else '❌'}"
+            )
+            if not trajectory.game_outcome["generator_prediction_format_valid"]:
+                print(
+                    f"   Generator format error: {trajectory.game_outcome['generator_prediction_validation_error']}"
+                )
+
             print(f"   Guesser predicted: '{trajectory.guesser_data['prediction']}'")
             print(
                 f"   Guesser correct: {'✅' if trajectory.game_outcome['guesser_prediction_correct'] else '❌'}"
             )
+            print(
+                f"   Guesser format valid: {'✅' if trajectory.game_outcome['guesser_prediction_format_valid'] else '❌'}"
+            )
+            if not trajectory.game_outcome["guesser_prediction_format_valid"]:
+                print(
+                    f"   Guesser format error: {trajectory.game_outcome['guesser_prediction_validation_error']}"
+                )
+
+            print(
+                f"   Output format valid: {'✅' if trajectory.game_outcome['output_format_valid'] else '❌'}"
+            )
+            if not trajectory.game_outcome["output_format_valid"]:
+                print(
+                    f"   Output format error: {trajectory.game_outcome['output_validation_error']}"
+                )
 
             # Show rewards
             print(f"\n🏆 Rewards:")
@@ -980,8 +1241,17 @@ for step in range(num_steps):
             pred_status = (
                 "✅" if trajectory.game_outcome["guesser_prediction_correct"] else "❌"
             )
+            format_status = (
+                "✅"
+                if (
+                    trajectory.game_outcome["output_format_valid"]
+                    and trajectory.game_outcome["generator_prediction_format_valid"]
+                    and trajectory.game_outcome["guesser_prediction_format_valid"]
+                )
+                else "❌"
+            )
             print(
-                f"🎮 Game {game_idx + 1}: Code {status}, Prediction {pred_status}, Gen: {trajectory.game_outcome['generator_reward']:+.1f}, Guess: {trajectory.game_outcome['guesser_reward']:+.1f}"
+                f"🎮 Game {game_idx + 1}: Code {status}, Format {format_status}, Prediction {pred_status}, Gen: {trajectory.game_outcome['generator_reward']:+.1f}, Guess: {trajectory.game_outcome['guesser_reward']:+.1f}"
             )
 
         # Track statistics
@@ -999,6 +1269,24 @@ for step in range(num_steps):
         if trajectory.game_outcome["guesser_prediction_correct"]:
             guesser_correct_predictions += 1
 
+        # Track format validation statistics
+        if trajectory.game_outcome["output_format_valid"]:
+            valid_output_format_count += 1
+
+        if trajectory.game_outcome["generator_prediction_format_valid"]:
+            valid_generator_prediction_format_count += 1
+
+        if trajectory.game_outcome["guesser_prediction_format_valid"]:
+            valid_guesser_prediction_format_count += 1
+
+        # Count games with any format violations
+        if not (
+            trajectory.game_outcome["output_format_valid"]
+            and trajectory.game_outcome["generator_prediction_format_valid"]
+            and trajectory.game_outcome["guesser_prediction_format_valid"]
+        ):
+            format_violation_count += 1
+
     # Compute policy gradient loss using RAE
     loss = compute_policy_gradient_loss(model, tokenizer, trajectories, rae, device)
 
@@ -1013,10 +1301,14 @@ for step in range(num_steps):
     # Logging
     rae_stats = rae.get_stats()
     executable_rate = code_executable_count / games_per_step
-    generator_prediction_accuracy = (
-        generator_correct_predictions / games_per_step
-    )  # NEW
-    guesser_prediction_accuracy = guesser_correct_predictions / games_per_step  # NEW
+    generator_prediction_accuracy = generator_correct_predictions / games_per_step
+    guesser_prediction_accuracy = guesser_correct_predictions / games_per_step
+
+    # Format validation rates
+    output_format_rate = valid_output_format_count / games_per_step
+    generator_format_rate = valid_generator_prediction_format_count / games_per_step
+    guesser_format_rate = valid_guesser_prediction_format_count / games_per_step
+    format_violation_rate = format_violation_count / games_per_step
 
     stats = {
         "step": step,
@@ -1024,18 +1316,24 @@ for step in range(num_steps):
         "generator_wins": generator_wins,
         "guesser_wins": guesser_wins,
         "executable_rate": executable_rate,
-        "generator_prediction_accuracy": generator_prediction_accuracy,  # NEW
-        "guesser_prediction_accuracy": guesser_prediction_accuracy,  # NEW
+        "generator_prediction_accuracy": generator_prediction_accuracy,
+        "guesser_prediction_accuracy": guesser_prediction_accuracy,
+        "output_format_rate": output_format_rate,
+        "generator_format_rate": generator_format_rate,
+        "guesser_format_rate": guesser_format_rate,
+        "format_violation_rate": format_violation_rate,
         **rae_stats,
     }
 
     print(f"📊 Loss: {loss.item():.4f}")
     print(f"🏆 Generator wins: {generator_wins}, Guesser wins: {guesser_wins}")
     print(f"💻 Executable code rate: {executable_rate:.2%}")
+    print(f"🎯 Generator prediction accuracy: {generator_prediction_accuracy:.2%}")
+    print(f"🎯 Guesser prediction accuracy: {guesser_prediction_accuracy:.2%}")
     print(
-        f"🎯 Generator prediction accuracy: {generator_prediction_accuracy:.2%}"
-    )  # NEW
-    print(f"🎯 Guesser prediction accuracy: {guesser_prediction_accuracy:.2%}")  # NEW
+        f"📋 Format compliance - Output: {output_format_rate:.2%}, Gen pred: {generator_format_rate:.2%}, Guess pred: {guesser_format_rate:.2%}"
+    )
+    print(f"⚠️ Format violations: {format_violation_rate:.2%}")
     print(
         f"📈 Baselines - Gen: {rae_stats['baseline_generator']:.3f}, Guess: {rae_stats['baseline_guesser']:.3f}"
     )
