@@ -101,6 +101,8 @@ vllm:
     gpu_memory_utilization: 0.85
     max_model_len: 2048
     tensor_parallel_size: 1
+    max_num_batched_tokens: 4096
+    max_num_seqs: 128
   client:
     base_url: "http://127.0.0.1:8000"
     timeout: 60
