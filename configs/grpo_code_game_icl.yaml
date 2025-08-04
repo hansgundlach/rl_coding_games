@@ -94,7 +94,7 @@ wandb:
 
 # vLLM Configuration (optional)
 vllm:
-  enabled: true
+  enabled: false
   server:
     host: "127.0.0.1"
     port: 8000
