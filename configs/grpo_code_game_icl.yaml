@@ -95,14 +95,25 @@ wandb:
 # vLLM Configuration (optional)
 vllm:
   enabled: true
-  port: 8000
-  host: "127.0.0.1"
-  gpu_memory_utilization: 0.85
-  max_model_len: 2048
+  server:
+    host: "127.0.0.1"
+    port: 8000
+    gpu_memory_utilization: 0.85
+    max_model_len: 2048
+    tensor_parallel_size: 1
+  client:
+    base_url: "http://127.0.0.1:8000"
+    timeout: 60
+    max_retries: 3
+  generation:
+    temperature: 0.8
+    top_p: 0.9
+    max_tokens: 512
   integration:
     use_for_grpo_completions: true
-    use_for_evaluation: true           # <-- Add this line
+    use_for_evaluation: true
     log_performance_comparison: false
+    auto_start_server: true
 
 # Debug Configuration
 debug:
