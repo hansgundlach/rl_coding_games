@@ -34,7 +34,7 @@ game:
 
 # Generation parameters
 generation:
-  max_new_tokens: 500              # Maximum response length for strategy code
+  max_new_tokens: 512              # Maximum response length for strategy code
   temperature: 1.0                  # Sampling temperature
   top_p: 1.0                        # Top P sampling (1.0 = disabled)
   top_k: -1                         # Top K sampling (-1 = disabled)
@@ -64,7 +64,7 @@ evaluation:
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_prisoners_dilemma"
   temperature: 0.2
-  max_new_tokens: 256
+  max_new_tokens: 512
   timeout_seconds: 10
 
 # Debug Configuration
