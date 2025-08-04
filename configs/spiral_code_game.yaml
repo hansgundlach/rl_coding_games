@@ -3,7 +3,7 @@
 
 # Model configuration
 model:
-  id: "Qwen/Qwen3-4B"
+  id: "Qwen/Qwen3-1.7B"
   cache_dir: "./model_cache"
 
 # LoRA configuration for efficient training
