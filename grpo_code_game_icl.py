@@ -736,6 +736,30 @@ print(generator_model.print_trainable_parameters())
 device = next(generator_model.parameters()).device
 print(f"Model device: {device}")
 
+# Initialize vLLM integration if enabled
+vllm_config = config.get("vllm", {})
+if vllm_config.get("enabled", False):
+    print("🚀 Initializing vLLM integration...")
+    from utils.vllm_client import initialize_vllm_integration
+    
+    try:
+        vllm_integration = initialize_vllm_integration(
+            vllm_config, 
+            generator_model_id, 
+            offline_mode
+        )
+        
+        if vllm_integration.initialize():
+            print("✅ vLLM server started successfully")
+        else:
+            print("⚠️ vLLM server failed to start, falling back to HuggingFace")
+            
+    except Exception as e:
+        print(f"❌ vLLM initialization failed: {e}")
+        print("⚠️ Continuing with HuggingFace generation only")
+else:
+    print("🚫 vLLM disabled in configuration")
+
 # Initialize ICL memory
 latest_memory = ICLMemory(max_size=config["icl"]["memory_size"])
 print(f"🧠 Initialized ICL memory with size {config['icl']['memory_size']}")
