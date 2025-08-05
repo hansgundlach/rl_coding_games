@@ -492,13 +492,13 @@ if config.get("vllm", {}).get("enabled", False):
                     f"Model ID '{model_id}' not found in cache, vLLM will attempt to download it."
                 )
 
-        vllm_integration = initialize_vllm_integration(
-            config["vllm"], vllm_model_path, offline_mode=offline_mode
-        )
-        if vllm_integration.initialize():
-            print("✅ vLLM server started successfully")
-        else:
-            print("⚠️ vLLM server failed to start, will use HuggingFace fallback")
+            vllm_integration = initialize_vllm_integration(
+                config["vllm"], vllm_model_path, offline_mode=offline_mode
+            )
+            if vllm_integration.initialize():
+                print("✅ vLLM server started successfully")
+            else:
+                print("⚠️ vLLM server failed to start, will use HuggingFace fallback")
     except Exception as e:
         print(f"⚠️ vLLM initialization failed: {e}")
         print("   Continuing with HuggingFace generation...")
