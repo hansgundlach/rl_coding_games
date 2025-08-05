@@ -101,14 +101,6 @@ class VLLMServerManager:
             if self.config.server.get("trust_remote_code"):
                 cmd.append("--trust-remote-code")
 
-            # Add additional compatibility flags for Qwen2.5 and other models
-            cmd.extend(
-                [
-                    "--disable-log-stats",  # Reduce logging overhead
-                    "--enforce-eager",  # Use eager execution mode for compatibility
-                ]
-            )
-
             logger.info(f"🚀 Starting vLLM server: {' '.join(cmd)}")
 
             # Start server process
