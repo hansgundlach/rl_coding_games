@@ -19,6 +19,19 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+# Enable CUDA debugging if requested - this helps debug the "device-side assert" errors
+if os.environ.get("CUDA_DEBUG", "false").lower() == "true":
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+    os.environ["TORCH_USE_CUDA_DSA"] = "1"
+    print(
+        "🔍 CUDA debugging enabled - blocking execution and device-side assertions activated"
+    )
+
+# Set longer NCCL timeout to prevent distributed training timeouts
+os.environ["NCCL_TIMEOUT"] = "3600"  # 1 hour instead of default 10 minutes
+os.environ["NCCL_BLOCKING_WAIT"] = "1"  # More reliable error reporting
+print("⏰ Set NCCL timeout to 1 hour to prevent distributed sync timeouts")
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -396,35 +409,69 @@ class DistributedRoleConditionedAdvantageEstimation:
         self.update_counts[role] += 1
 
     def sync_baselines(self):
-        """Synchronize baselines across all distributed processes."""
+        """Synchronize baselines across all distributed processes with timeout protection."""
         if dist.is_initialized() and dist.get_world_size() > 1:
-            # Convert baselines to tensors for all_reduce
-            baseline_tensor = torch.tensor(
-                [self.baselines["player1"], self.baselines["player2"]],
-                dtype=torch.float32,
-                device=f"cuda:{dist_info['local_rank']}",
-            )
+            try:
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Syncing RAE baselines across {dist.get_world_size()} processes..."
+                    )
 
-            count_tensor = torch.tensor(
-                [self.update_counts["player1"], self.update_counts["player2"]],
-                dtype=torch.float32,
-                device=f"cuda:{dist_info['local_rank']}",
-            )
+                # Convert baselines to tensors for all_reduce
+                baseline_tensor = torch.tensor(
+                    [self.baselines["player1"], self.baselines["player2"]],
+                    dtype=torch.float32,
+                    device=f"cuda:{dist_info['local_rank']}",
+                )
 
-            # All-reduce to get sum across all processes
-            dist.all_reduce(baseline_tensor, op=dist.ReduceOp.SUM)
-            dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+                count_tensor = torch.tensor(
+                    [self.update_counts["player1"], self.update_counts["player2"]],
+                    dtype=torch.float32,
+                    device=f"cuda:{dist_info['local_rank']}",
+                )
 
-            # Average the baselines
-            world_size = dist.get_world_size()
-            baseline_tensor /= world_size
-            count_tensor /= world_size
+                # Barrier to ensure all processes are ready
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Waiting for all processes at RAE barrier..."
+                    )
+                dist.barrier(timeout=datetime.timedelta(seconds=30))
 
-            # Update local baselines
-            self.baselines["player1"] = baseline_tensor[0].item()
-            self.baselines["player2"] = baseline_tensor[1].item()
-            self.update_counts["player1"] = int(count_tensor[0].item())
-            self.update_counts["player2"] = int(count_tensor[1].item())
+                # All-reduce operations
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Performing RAE all_reduce operations..."
+                    )
+
+                dist.all_reduce(baseline_tensor, op=dist.ReduceOp.SUM)
+                dist.all_reduce(count_tensor, op=dist.ReduceOp.SUM)
+
+                if dist_info["is_main_process"]:
+                    print(
+                        f"✅ [Rank {dist_info['rank']}] RAE all_reduce completed successfully"
+                    )
+
+                # Average the baselines
+                world_size = dist.get_world_size()
+                baseline_tensor /= world_size
+                count_tensor /= world_size
+
+                # Update local baselines
+                self.baselines["player1"] = baseline_tensor[0].item()
+                self.baselines["player2"] = baseline_tensor[1].item()
+                self.update_counts["player1"] = int(count_tensor[0].item())
+                self.update_counts["player2"] = int(count_tensor[1].item())
+
+                if dist_info["is_main_process"]:
+                    print(
+                        f"📊 [Rank {dist_info['rank']}] RAE sync complete - P1: {self.baselines['player1']:.3f}, P2: {self.baselines['player2']:.3f}"
+                    )
+
+            except Exception as e:
+                if dist_info["is_main_process"]:
+                    print(f"⚠️ [Rank {dist_info['rank']}] RAE baseline sync failed: {e}")
+                    print(f"   Continuing with local baselines only")
+                # Continue with local baselines if sync fails
 
     def compute_advantage(self, role: str, reward: float) -> float:
         """Compute advantage for player by subtracting role-specific baseline."""
@@ -494,32 +541,68 @@ def play_strategy_game_distributed(
         prompt = game_env.get_player_prompt(player_id, "player")
 
         # Generate response with seeded randomness (include rank for distributed seeding)
-        inputs = tokenizer(
-            prompt, return_tensors="pt", truncation=True, max_length=1024
-        )
-        if device.type == "cuda":
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        # Seed for deterministic generation per player (include rank for distributed consistency)
-        seed_manager.seed_for_generation(step=step, generation_idx=player_id + rank * 2)
-
-        with torch.no_grad():
-            # Use .module to access the underlying model when using DDP
-            generation_model = model.module if hasattr(model, "module") else model
-            outputs = generation_model.generate(
-                **inputs,
-                max_new_tokens=config["generation"]["max_new_tokens"],
-                temperature=config["generation"]["temperature"],
-                top_p=config["generation"]["top_p"],
-                top_k=(
-                    config["generation"]["top_k"]
-                    if config["generation"]["top_k"] > 0
-                    else None
-                ),
-                do_sample=config["generation"]["do_sample"],
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
+        try:
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=1024
             )
+
+            # Validate input IDs are within vocabulary bounds
+            vocab_size = tokenizer.vocab_size
+            if torch.any(inputs["input_ids"] >= vocab_size) or torch.any(
+                inputs["input_ids"] < 0
+            ):
+                raise ValueError(
+                    f"Input token IDs out of bounds. Max ID: {torch.max(inputs['input_ids'])}, Vocab size: {vocab_size}"
+                )
+
+            if device.type == "cuda":
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            # Seed for deterministic generation per player (include rank for distributed consistency)
+            seed_manager.seed_for_generation(
+                step=step, generation_idx=player_id + rank * 2
+            )
+
+            with torch.no_grad():
+                # Use .module to access the underlying model when using DDP
+                generation_model = model.module if hasattr(model, "module") else model
+
+                # Additional safety checks
+                if inputs["input_ids"].shape[1] > 1024:
+                    if dist_info["is_main_process"]:
+                        print(
+                            f"⚠️ Warning: Input length {inputs['input_ids'].shape[1]} exceeds 1024, truncating..."
+                        )
+                    inputs["input_ids"] = inputs["input_ids"][:, :1024]
+                    inputs["attention_mask"] = inputs["attention_mask"][:, :1024]
+
+                outputs = generation_model.generate(
+                    **inputs,
+                    max_new_tokens=config["generation"]["max_new_tokens"],
+                    temperature=config["generation"]["temperature"],
+                    top_p=config["generation"]["top_p"],
+                    top_k=(
+                        config["generation"]["top_k"]
+                        if config["generation"]["top_k"] > 0
+                        else None
+                    ),
+                    do_sample=config["generation"]["do_sample"],
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                    # Additional safety parameters
+                    max_length=inputs["input_ids"].shape[1]
+                    + config["generation"]["max_new_tokens"],
+                    use_cache=True,
+                )
+        except Exception as e:
+            if dist_info["is_main_process"]:
+                print(f"❌ Generation error for Player {player_id} in game {step}: {e}")
+                print(f"   Prompt length: {len(prompt)}")
+                print(
+                    f"   Input shape: {inputs.get('input_ids', torch.tensor([])).shape if 'inputs' in locals() else 'N/A'}"
+                )
+            # Return a fallback response
+            outputs = inputs["input_ids"]  # Just return the input as fallback
 
         response = tokenizer.decode(
             outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
@@ -853,34 +936,72 @@ for step in range(num_steps):
             prompt = game_env.get_player_prompt(player_id, "player")
 
             # Generate response with seeded randomness (include rank for distributed consistency)
-            inputs = tokenizer(
-                prompt, return_tensors="pt", truncation=True, max_length=1024
-            )
-            if device.type == "cuda":
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-
-            # Seed for deterministic generation per player (include rank for distributed consistency)
-            seed_manager.seed_for_generation(
-                step=game_step, generation_idx=player_id + dist_info["rank"] * 2
-            )
-
-            with torch.no_grad():
-                # Use .module to access the underlying model when using DDP
-                generation_model = model.module if hasattr(model, "module") else model
-                outputs = generation_model.generate(
-                    **inputs,
-                    max_new_tokens=config["generation"]["max_new_tokens"],
-                    temperature=config["generation"]["temperature"],
-                    top_p=config["generation"]["top_p"],
-                    top_k=(
-                        config["generation"]["top_k"]
-                        if config["generation"]["top_k"] > 0
-                        else None
-                    ),
-                    do_sample=config["generation"]["do_sample"],
-                    pad_token_id=tokenizer.eos_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
+            try:
+                inputs = tokenizer(
+                    prompt, return_tensors="pt", truncation=True, max_length=1024
                 )
+
+                # Validate input IDs are within vocabulary bounds
+                vocab_size = tokenizer.vocab_size
+                if torch.any(inputs["input_ids"] >= vocab_size) or torch.any(
+                    inputs["input_ids"] < 0
+                ):
+                    raise ValueError(
+                        f"Input token IDs out of bounds. Max ID: {torch.max(inputs['input_ids'])}, Vocab size: {vocab_size}"
+                    )
+
+                if device.type == "cuda":
+                    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+                # Seed for deterministic generation per player (include rank for distributed consistency)
+                seed_manager.seed_for_generation(
+                    step=game_step, generation_idx=player_id + dist_info["rank"] * 2
+                )
+
+                with torch.no_grad():
+                    # Use .module to access the underlying model when using DDP
+                    generation_model = (
+                        model.module if hasattr(model, "module") else model
+                    )
+
+                    # Additional safety checks
+                    if inputs["input_ids"].shape[1] > 1024:
+                        if dist_info["is_main_process"]:
+                            print(
+                                f"⚠️ Warning: Input length {inputs['input_ids'].shape[1]} exceeds 1024, truncating..."
+                            )
+                        inputs["input_ids"] = inputs["input_ids"][:, :1024]
+                        inputs["attention_mask"] = inputs["attention_mask"][:, :1024]
+
+                    outputs = generation_model.generate(
+                        **inputs,
+                        max_new_tokens=config["generation"]["max_new_tokens"],
+                        temperature=config["generation"]["temperature"],
+                        top_p=config["generation"]["top_p"],
+                        top_k=(
+                            config["generation"]["top_k"]
+                            if config["generation"]["top_k"] > 0
+                            else None
+                        ),
+                        do_sample=config["generation"]["do_sample"],
+                        pad_token_id=tokenizer.eos_token_id,
+                        eos_token_id=tokenizer.eos_token_id,
+                        # Additional safety parameters
+                        max_length=inputs["input_ids"].shape[1]
+                        + config["generation"]["max_new_tokens"],
+                        use_cache=True,
+                    )
+            except Exception as e:
+                if dist_info["is_main_process"]:
+                    print(
+                        f"❌ Generation error for Player {player_id} in game {game_idx}, step {step}: {e}"
+                    )
+                    print(f"   Prompt length: {len(prompt)}")
+                    print(
+                        f"   Input shape: {inputs.get('input_ids', torch.tensor([])).shape if 'inputs' in locals() else 'N/A'}"
+                    )
+                # Return a fallback response
+                outputs = inputs["input_ids"]  # Just return the input as fallback
 
             response = tokenizer.decode(
                 outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
@@ -1117,39 +1238,77 @@ for step in range(num_steps):
 
     # Gather statistics from all processes for logging (only on main process)
     if dist_info["is_main_process"]:
-        # Convert local stats to tensors for all_reduce
+        # Convert local stats to tensors for all_reduce with timeout protection
         if dist_info["world_size"] > 1:
-            stats_tensor = torch.tensor(
-                [
-                    local_stats["player1_wins"],
-                    local_stats["player2_wins"],
-                    local_stats["ties"],
-                    local_stats["successful_games"],
-                    local_stats["execution_failures"],
-                    local_stats["total_noise_rounds"],
-                    local_stats["games_with_noise"],
-                    local_stats["wsls_bot_games"],
-                    local_stats["wsls_bot_wins"],
-                ],
-                dtype=torch.float32,
-                device=device,
-            )
+            try:
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Syncing game statistics across {dist_info['world_size']} processes..."
+                    )
 
-            # Sum across all processes
-            dist.all_reduce(stats_tensor, op=dist.ReduceOp.SUM)
+                stats_tensor = torch.tensor(
+                    [
+                        local_stats["player1_wins"],
+                        local_stats["player2_wins"],
+                        local_stats["ties"],
+                        local_stats["successful_games"],
+                        local_stats["execution_failures"],
+                        local_stats["total_noise_rounds"],
+                        local_stats["games_with_noise"],
+                        local_stats["wsls_bot_games"],
+                        local_stats["wsls_bot_wins"],
+                    ],
+                    dtype=torch.float32,
+                    device=device,
+                )
 
-            # Update global stats
-            global_stats = {
-                "player1_wins": int(stats_tensor[0].item()),
-                "player2_wins": int(stats_tensor[1].item()),
-                "ties": int(stats_tensor[2].item()),
-                "successful_games": int(stats_tensor[3].item()),
-                "execution_failures": int(stats_tensor[4].item()),
-                "total_noise_rounds": int(stats_tensor[5].item()),
-                "games_with_noise": int(stats_tensor[6].item()),
-                "wsls_bot_games": int(stats_tensor[7].item()),
-                "wsls_bot_wins": int(stats_tensor[8].item()),
-            }
+                # Barrier to ensure all processes are ready
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Waiting for all processes at stats barrier..."
+                    )
+                dist.barrier(timeout=datetime.timedelta(seconds=30))
+
+                # All-reduce operations
+                if dist_info["is_main_process"]:
+                    print(
+                        f"🔄 [Rank {dist_info['rank']}] Performing stats all_reduce..."
+                    )
+
+                # Sum across all processes
+                dist.all_reduce(stats_tensor, op=dist.ReduceOp.SUM)
+
+                if dist_info["is_main_process"]:
+                    print(
+                        f"✅ [Rank {dist_info['rank']}] Stats all_reduce completed successfully"
+                    )
+
+                # Update global stats
+                global_stats = {
+                    "player1_wins": int(stats_tensor[0].item()),
+                    "player2_wins": int(stats_tensor[1].item()),
+                    "ties": int(stats_tensor[2].item()),
+                    "successful_games": int(stats_tensor[3].item()),
+                    "execution_failures": int(stats_tensor[4].item()),
+                    "total_noise_rounds": int(stats_tensor[5].item()),
+                    "games_with_noise": int(stats_tensor[6].item()),
+                    "wsls_bot_games": int(stats_tensor[7].item()),
+                    "wsls_bot_wins": int(stats_tensor[8].item()),
+                }
+
+                if dist_info["is_main_process"]:
+                    print(
+                        f"📊 [Rank {dist_info['rank']}] Stats sync complete - {global_stats['successful_games']} successful games"
+                    )
+
+            except Exception as e:
+                if dist_info["is_main_process"]:
+                    print(
+                        f"⚠️ [Rank {dist_info['rank']}] Stats synchronization failed: {e}"
+                    )
+                    print(f"   Using local statistics only")
+                # Fallback to local statistics
+                global_stats = local_stats
         else:
             global_stats = local_stats
 
