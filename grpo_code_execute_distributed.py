@@ -493,6 +493,7 @@ model1 = AutoModelForCausalLM.from_pretrained(
     device_map={"": dist_info["local_rank"]},  # Map to specific GPU
     cache_dir=cache_dir,
     local_files_only=offline_mode,
+    attn_implementation="flash_attention_2",
 )
 
 if dist_info["is_main_process"]:
