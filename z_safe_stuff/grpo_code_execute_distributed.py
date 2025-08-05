@@ -24,9 +24,6 @@ import time
 import signal
 import yaml
 import argparse
-import concurrent.futures
-import multiprocessing
-import functools
 
 
 # Initialize distributed training first
@@ -426,30 +423,6 @@ def safe_execute_code(code: str, timeout: int = 5) -> dict:
     return result
 
 
-def extract_and_execute_code(completion_with_index, timeout=3):
-    """Helper function for parallel code execution."""
-    i, comp = completion_with_index
-
-    if not isinstance(comp, str):
-        return i, -1.0, {"error": "Invalid completion", "success": False}
-
-    # Extract Python code from completion
-    code_match = re.search(r"```python\s*\n(.*?)```", comp, re.DOTALL)
-    if code_match:
-        code = code_match.group(1).strip()
-    else:
-        # Try to extract code without markdown formatting
-        code = comp.strip()
-
-    if not code:
-        return i, -1.0, {"error": "No code generated", "success": False}
-
-    # Execute the code safely
-    execution_result = safe_execute_code(code, timeout=timeout)
-
-    return i, comp, code, execution_result
-
-
 # Define the code generation prompt
 prompt = (
     "Write a complete Python program that demonstrates a programming concept or solves a simple problem. "
@@ -547,7 +520,7 @@ else:
 def execution_reward_function(completions, **kwargs):
     """
     Reward function for code execution training.
-    Uses CPU parallelism for faster code execution.
+    Distributed-aware reward calculation.
     """
     rewards = []
     successful_executions = 0
@@ -576,98 +549,56 @@ def execution_reward_function(completions, **kwargs):
                 f"🚀 [Rank {dist_info['rank']}] Using vLLM for {len(completions)} completions"
             )
 
-    # Determine number of workers - use available CPU cores but not more than completions
-    max_workers = min(len(completions), multiprocessing.cpu_count())
-
-    if dist_info["is_main_process"]:
-        print(
-            f"🔥 [Rank {dist_info['rank']}] Executing {len(completions)} completions in parallel using {max_workers} CPU cores"
-        )
-
-    # Prepare completions with indices for parallel processing
-    indexed_completions = list(enumerate(completions))
-
-    # Execute all completions in parallel
-    execution_results = {}
-    start_time = time.time()
-
-    try:
-        # Create partial function with timeout from config
-        execute_with_timeout = functools.partial(
-            extract_and_execute_code, timeout=config["execution"]["timeout"]
-        )
-
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=max_workers
-        ) as executor:
-            # Submit all tasks
-            future_to_index = {
-                executor.submit(execute_with_timeout, comp_with_idx): comp_with_idx[0]
-                for comp_with_idx in indexed_completions
-            }
-
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(future_to_index):
-                try:
-                    result = future.result()
-                    if len(result) == 3:  # Error case
-                        i, reward, error_info = result
-                        execution_results[i] = (completions[i], "", error_info, reward)
-                    else:  # Success case
-                        i, comp, code, execution_result = result
-                        execution_results[i] = (comp, code, execution_result, None)
-                except Exception as e:
-                    index = future_to_index[future]
-                    execution_results[index] = (
-                        completions[index],
-                        "",
-                        {"error": f"Execution failed: {str(e)}", "success": False},
-                        -1.0,
-                    )
-    except Exception as e:
-        # Fallback to sequential execution if parallel fails
-        if dist_info["is_main_process"]:
-            print(f"⚠️ Parallel execution failed: {e}, falling back to sequential")
-        for i, comp in enumerate(completions):
-            result = extract_and_execute_code(
-                (i, comp), timeout=config["execution"]["timeout"]
-            )
-            if len(result) == 3:
-                execution_results[i] = (comp, "", result[2], result[1])
-            else:
-                execution_results[i] = (comp, result[2], result[3], None)
-
-    parallel_time = time.time() - start_time
-
-    # Process results in order and calculate rewards
-    for i in range(len(completions)):
-        comp, code, execution_result, pre_calculated_reward = execution_results[i]
-
-        if pre_calculated_reward is not None:
-            # Error case with pre-calculated reward
-            reward = pre_calculated_reward
+    for i, comp in enumerate(completions):
+        if not isinstance(comp, str):
+            rewards.append(-1.0)  # Invalid completion
             failed_executions += 1
+            continue
+
+        # Extract Python code from completion
+        code_match = re.search(r"```python\s*\n(.*?)```", comp, re.DOTALL)
+        if code_match:
+            code = code_match.group(1).strip()
         else:
-            # Calculate reward based on execution result
-            if execution_result["success"]:
-                if execution_result["output"]:
-                    reward = config["rewards"]["success_with_output"]
-                    successful_executions += 1
-                else:
-                    reward = config["rewards"]["success_no_output"]
-                    successful_executions += 1
-            elif execution_result["timeout"]:
-                reward = config["rewards"]["timeout_error"]
-                timeout_executions += 1
-            elif (
-                "SyntaxError" in execution_result["error"]
-                or "IndentationError" in execution_result["error"]
-            ):
-                reward = config["rewards"]["syntax_error"]
-                syntax_errors += 1
+            # Try to extract code without markdown formatting
+            code = comp.strip()
+
+        if not code:
+            rewards.append(-1.0)  # No code generated
+            failed_executions += 1
+            continue
+
+        # Execute the code safely
+        execution_result = safe_execute_code(
+            code, timeout=config["execution"]["timeout"]
+        )
+
+        # Calculate reward based on execution result
+        if execution_result["success"]:
+            if execution_result["output"]:
+                reward = config["rewards"][
+                    "success_with_output"
+                ]  # Perfect: runs and produces output
+                successful_executions += 1
             else:
-                reward = config["rewards"]["runtime_error"]
-                failed_executions += 1
+                reward = config["rewards"][
+                    "success_no_output"
+                ]  # Good: runs but no output
+                successful_executions += 1
+        elif execution_result["timeout"]:
+            reward = config["rewards"][
+                "timeout_error"
+            ]  # Bad: infinite loop or too slow
+            timeout_executions += 1
+        elif (
+            "SyntaxError" in execution_result["error"]
+            or "IndentationError" in execution_result["error"]
+        ):
+            reward = config["rewards"]["syntax_error"]  # Minor: syntax issues
+            syntax_errors += 1
+        else:
+            reward = config["rewards"]["runtime_error"]  # Bad: runtime errors
+            failed_executions += 1
 
         # Debug output (show first few, only on main process)
         if (
@@ -677,26 +608,21 @@ def execution_reward_function(completions, **kwargs):
             print("=" * 50)
             print(f"[Rank {dist_info['rank']}] Completion {i+1}:")
             print(f"Code: {code[:200]}...")
-            print(f"Success: {execution_result.get('success', False)}")
-            print(f"Output: {execution_result.get('output', '')[:100]}")
-            print(f"Error: {execution_result.get('error', '')[:100]}")
-            print(f"Execution time: {execution_result.get('execution_time', 0):.2f}s")
+            print(f"Success: {execution_result['success']}")
+            print(f"Output: {execution_result['output'][:100]}")
+            print(f"Error: {execution_result['error'][:100]}")
+            print(f"Execution time: {execution_result['execution_time']:.2f}s")
             print(f"Reward: {reward}")
             print("=" * 50)
 
         # Show progress for all completions (only on main process)
         if dist_info["is_main_process"]:
-            status = "✅" if execution_result.get("success", False) else "❌"
+            status = "✅" if execution_result["success"] else "❌"
             print(
-                f"[Rank {dist_info['rank']}] Completion {i+1}/{len(completions)}: {status} reward={reward:.1f}, time={execution_result.get('execution_time', 0):.2f}s"
+                f"[Rank {dist_info['rank']}] Completion {i+1}/{len(completions)}: {status} reward={reward:.1f}, time={execution_result['execution_time']:.2f}s"
             )
 
         rewards.append(reward)
-
-    if dist_info["is_main_process"]:
-        print(
-            f"🚀 [Rank {dist_info['rank']}] Parallel execution completed in {parallel_time:.2f}s using {max_workers} workers"
-        )
 
     # Log metrics to wandb after processing the entire batch (only main process)
     if WANDB_ENABLED and dist_info["is_main_process"]:
@@ -716,8 +642,6 @@ def execution_reward_function(completions, **kwargs):
                 "execution/timeout_executions": timeout_executions,
                 "execution/syntax_errors": syntax_errors,
                 "execution/total_completions": len(completions),
-                "execution/parallel_time": parallel_time,
-                "execution/cpu_workers": max_workers,
                 "distributed/rank": dist_info["rank"],
                 "distributed/world_size": dist_info["world_size"],
             }
