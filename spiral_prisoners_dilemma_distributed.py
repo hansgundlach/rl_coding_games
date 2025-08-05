@@ -504,7 +504,9 @@ def play_strategy_game_distributed(
         seed_manager.seed_for_generation(step=step, generation_idx=player_id + rank * 2)
 
         with torch.no_grad():
-            outputs = model.generate(
+            # Use .module to access the underlying model when using DDP
+            generation_model = model.module if hasattr(model, "module") else model
+            outputs = generation_model.generate(
                 **inputs,
                 max_new_tokens=config["generation"]["max_new_tokens"],
                 temperature=config["generation"]["temperature"],
@@ -863,7 +865,9 @@ for step in range(num_steps):
             )
 
             with torch.no_grad():
-                outputs = model.generate(
+                # Use .module to access the underlying model when using DDP
+                generation_model = model.module if hasattr(model, "module") else model
+                outputs = generation_model.generate(
                     **inputs,
                     max_new_tokens=config["generation"]["max_new_tokens"],
                     temperature=config["generation"]["temperature"],
