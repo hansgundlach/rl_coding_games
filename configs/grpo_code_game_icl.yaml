@@ -29,7 +29,7 @@ icl:
 
 # Game Configuration
 game:
-  timeout: 10                   # Code execution timeout in seconds
+  timeout: 3                   # Code execution timeout in seconds
 
 # Generation Configuration
 generation:
@@ -51,7 +51,7 @@ training:
 # GRPO Training Arguments
 training_args:
   learning_rate: 0.00002
-  beta: 0.1
+  beta: 0.05
   per_device_train_batch_size: 4
   gradient_accumulation_steps: 2
   max_prompt_length: 512
