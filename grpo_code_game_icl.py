@@ -917,10 +917,11 @@ print(f"📥 Loading generator model: {generator_model_id}")
 
 generator_model = AutoModelForCausalLM.from_pretrained(
     generator_model_id,
-    torch_dtype="auto",
+    torch_dtype=torch.float16,  # Use fp16
     device_map="auto",
     cache_dir=cache_dir,
     local_files_only=offline_mode,
+    load_in_8bit=False,  # 8-bit quantization
 )
 generator_tokenizer = AutoTokenizer.from_pretrained(
     generator_model_id, cache_dir=cache_dir, local_files_only=offline_mode
@@ -936,10 +937,11 @@ print(f"📥 Loading guesser model (frozen): {guesser_model_id}")
 
 guesser_model = AutoModelForCausalLM.from_pretrained(
     guesser_model_id,
-    torch_dtype="auto",
-    device_map="auto",
+    torch_dtype=torch.float16,
+    device_map="auto",  # or "cpu" for guesser
     cache_dir=cache_dir,
     local_files_only=offline_mode,
+    load_in_8bit=True,  # 8-bit quantization
 )
 guesser_tokenizer = AutoTokenizer.from_pretrained(
     guesser_model_id, cache_dir=cache_dir, local_files_only=offline_mode
