@@ -40,6 +40,9 @@ import json
 import yaml
 import argparse
 import concurrent.futures
+import multiprocessing
+import functools
+import time
 
 
 # Initialize distributed training first
@@ -79,7 +82,9 @@ if dist_info["is_main_process"]:
     print("📋 Initializing components...")
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description="Distributed SPIRAL Prisoner's Dilemma Training")
+parser = argparse.ArgumentParser(
+    description="Distributed SPIRAL Prisoner's Dilemma Training"
+)
 parser.add_argument(
     "--config",
     type=str,
@@ -180,6 +185,7 @@ def detect_platform_and_gpu():
             "gpu_type": "none",
             "offline_mode": False,
             "platform": "cpu",
+            "offline_reason": "no GPU available",
         }
 
     # Get GPU name for detection
@@ -396,13 +402,13 @@ class DistributedRoleConditionedAdvantageEstimation:
             baseline_tensor = torch.tensor(
                 [self.baselines["player1"], self.baselines["player2"]],
                 dtype=torch.float32,
-                device=f"cuda:{dist_info['local_rank']}"
+                device=f"cuda:{dist_info['local_rank']}",
             )
-            
+
             count_tensor = torch.tensor(
                 [self.update_counts["player1"], self.update_counts["player2"]],
                 dtype=torch.float32,
-                device=f"cuda:{dist_info['local_rank']}"
+                device=f"cuda:{dist_info['local_rank']}",
             )
 
             # All-reduce to get sum across all processes
@@ -434,7 +440,46 @@ class DistributedRoleConditionedAdvantageEstimation:
         }
 
 
-def play_strategy_game_distributed(model, tokenizer, device, game_env, step: int = 0, rank: int = 0) -> StrategyGameTrajectory:
+def execute_game_parallel(game_data_with_index):
+    """
+    Helper function for parallel game execution.
+    This function is designed to run in a separate process for CPU parallelism.
+
+    Args:
+        game_data_with_index: Tuple of (index, game_submissions, game_env_config)
+
+    Returns:
+        Tuple of (index, game_result, execution_success)
+    """
+    try:
+        idx, player_submissions, game_env_config = game_data_with_index
+
+        # Recreate game environment in this process (needed for multiprocessing)
+        from game_environments.prisoners_dilemma import IteratedPrisonersDilemma
+
+        local_game_env = IteratedPrisonersDilemma(game_env_config)
+
+        # Execute the game
+        game_result = local_game_env.play_game(player_submissions)
+
+        return idx, game_result, True
+
+    except Exception as e:
+        # Return error information
+        return (
+            idx,
+            {
+                "error": str(e),
+                "player_rewards": {0: -1.0, 1: -1.0},
+                "successful_submissions": 0,
+            },
+            False,
+        )
+
+
+def play_strategy_game_distributed(
+    model, tokenizer, device, game_env, step: int = 0, rank: int = 0
+) -> StrategyGameTrajectory:
     """
     Play a single strategy game between two instances of the same model.
     Distributed version that includes rank in seeding for reproducibility.
@@ -674,7 +719,11 @@ if dist_info["is_main_process"]:
 if dist_info["world_size"] > 1:
     if dist_info["is_main_process"]:
         print("🌐 Wrapping model with DistributedDataParallel...")
-    model = DDP(model, device_ids=[dist_info["local_rank"]], output_device=dist_info["local_rank"])
+    model = DDP(
+        model,
+        device_ids=[dist_info["local_rank"]],
+        output_device=dist_info["local_rank"],
+    )
 
 # Get device
 device = torch.device(f"cuda:{dist_info['local_rank']}")
@@ -689,7 +738,9 @@ if dist_info["is_main_process"]:
     )
 
 # Initialize SPIRAL components
-rae = DistributedRoleConditionedAdvantageEstimation(alpha=config["training"]["rae_alpha"])
+rae = DistributedRoleConditionedAdvantageEstimation(
+    alpha=config["training"]["rae_alpha"]
+)
 optimizer = torch.optim.Adam(model.parameters(), lr=config["training"]["learning_rate"])
 
 # Training parameters
@@ -699,19 +750,23 @@ num_steps = config["training"]["num_steps"]
 if platform_info["gpu_type"] == "V100":
     games_per_step_per_gpu = config["training"]["games_per_step_v100"]
     if dist_info["is_main_process"]:
-        print(f"🔧 Using V100 memory-optimized settings: {games_per_step_per_gpu} games per GPU")
+        print(
+            f"🔧 Using V100 memory-optimized settings: {games_per_step_per_gpu} games per GPU"
+        )
 else:
     games_per_step_per_gpu = config["training"]["games_per_step_other"]
     if dist_info["is_main_process"]:
-        print(f"🔧 Using standard memory settings: {games_per_step_per_gpu} games per GPU")
+        print(
+            f"🔧 Using standard memory settings: {games_per_step_per_gpu} games per GPU"
+        )
 
 total_games_per_step = games_per_step_per_gpu * dist_info["world_size"]
 
 if dist_info["is_main_process"]:
+    print(f"🎮 Starting distributed SPIRAL prisoner's dilemma training:")
     print(
-        f"🎮 Starting distributed SPIRAL prisoner's dilemma training:"
+        f"   {num_steps} steps, {games_per_step_per_gpu} games per GPU, {total_games_per_step} games total per step"
     )
-    print(f"   {num_steps} steps, {games_per_step_per_gpu} games per GPU, {total_games_per_step} games total per step")
     print(f"   Using {dist_info['world_size']} GPUs")
 
 # Initialize wandb run (only if W&B is enabled by user and on main process)
@@ -719,21 +774,26 @@ if WANDB_ENABLED and dist_info["is_main_process"]:
     # Create human-readable timestamp: Jul31_2025_14h30m
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-distributed-{timestamp}"
-    wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info(), "distributed": dist_info})
+    wandb.init(
+        project=project_name,
+        config={**config, **seed_manager.get_seed_info(), "distributed": dist_info},
+    )
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )
 
 # Run initial MBPP evaluation if enabled (only on main process)
-if (config["evaluation"].get("enabled_initial", True) and 
-    mbpp_evaluator is not None and 
-    mbpp_evaluator.config.enabled and 
-    dist_info["is_main_process"]):
+if (
+    config["evaluation"].get("enabled_initial", True)
+    and mbpp_evaluator is not None
+    and mbpp_evaluator.config.enabled
+    and dist_info["is_main_process"]
+):
     print("🧪 Running initial MBPP evaluation...")
     # Seed for consistent evaluation
     seed_manager.seed_for_evaluation_auto("initial")
     # Use the underlying model for evaluation (unwrap DDP if needed)
-    eval_model = model.module if hasattr(model, 'module') else model
+    eval_model = model.module if hasattr(model, "module") else model
     initial_results = mbpp_evaluator.evaluate_model(
         eval_model, tokenizer, step=0, phase="initial"
     )
@@ -768,15 +828,197 @@ for step in range(num_steps):
         "wsls_bot_wins": 0,
     }
 
-    # Each GPU processes its subset of games
+    # ============================================================================
+    # PHASE 1: Generate strategies for all games (GPU-bound, sequential)
+    # ============================================================================
+    if dist_info["is_main_process"]:
+        print(
+            f"🔥 [Rank {dist_info['rank']}] Phase 1: Generating strategies for {games_per_step_per_gpu} games..."
+        )
+
+    game_preparations = []  # Will store (game_idx, player_submissions) for each game
+
     for game_idx in range(games_per_step_per_gpu):
         # Calculate global game index for seeding consistency
         global_game_idx = dist_info["rank"] * games_per_step_per_gpu + game_idx
-        
-        trajectory = play_strategy_game_distributed(
-            model, tokenizer, device, game_env, 
-            step=step * total_games_per_step + global_game_idx, 
-            rank=dist_info["rank"]
+        game_step = step * total_games_per_step + global_game_idx
+
+        # Generate strategy code for both players
+        player_submissions = []
+
+        for player_id in [0, 1]:
+            # Get prompt for this player
+            prompt = game_env.get_player_prompt(player_id, "player")
+
+            # Generate response with seeded randomness (include rank for distributed consistency)
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=1024
+            )
+            if device.type == "cuda":
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            # Seed for deterministic generation per player (include rank for distributed consistency)
+            seed_manager.seed_for_generation(
+                step=game_step, generation_idx=player_id + dist_info["rank"] * 2
+            )
+
+            with torch.no_grad():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=config["generation"]["max_new_tokens"],
+                    temperature=config["generation"]["temperature"],
+                    top_p=config["generation"]["top_p"],
+                    top_k=(
+                        config["generation"]["top_k"]
+                        if config["generation"]["top_k"] > 0
+                        else None
+                    ),
+                    do_sample=config["generation"]["do_sample"],
+                    pad_token_id=tokenizer.eos_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+
+            response = tokenizer.decode(
+                outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+            ).strip()
+
+            # Extract and validate code
+            extracted_code = game_env.extract_code_from_response(response)
+            is_valid, error_msg = game_env.validate_submission(
+                extracted_code, player_id, "player"
+            )
+
+            # Create player submission
+            submission = PlayerSubmission(
+                player_id=player_id,
+                role="player",
+                prompt=prompt,
+                response=response,
+                extracted_code=extracted_code,
+                compilation_success=is_valid,
+                compilation_error=error_msg,
+            )
+            player_submissions.append(submission)
+
+        # Store game preparation data for parallel execution
+        game_preparations.append((game_idx, player_submissions))
+
+    # ============================================================================
+    # PHASE 2: Execute all games in parallel (CPU-bound, parallel)
+    # ============================================================================
+    if dist_info["is_main_process"]:
+        print(
+            f"⚙️ [Rank {dist_info['rank']}] Phase 2: Executing {len(game_preparations)} games in parallel..."
+        )
+
+    # Determine number of workers for game execution
+    max_workers = min(len(game_preparations), multiprocessing.cpu_count())
+
+    # Prepare data for parallel execution
+    game_execution_data = [
+        (game_idx, player_submissions, config["game"])
+        for game_idx, player_submissions in game_preparations
+    ]
+
+    # Execute games in parallel
+    game_results = {}
+    parallel_start = time.time()
+
+    try:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=max_workers
+        ) as executor:
+            # Submit all game execution tasks
+            future_to_index = {
+                executor.submit(execute_game_parallel, game_data): game_data[0]
+                for game_data in game_execution_data
+            }
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_index):
+                try:
+                    idx, game_result, success = future.result()
+                    game_results[idx] = (game_result, success)
+                except Exception as e:
+                    idx = future_to_index[future]
+                    game_results[idx] = (
+                        {
+                            "error": str(e),
+                            "player_rewards": {0: -1.0, 1: -1.0},
+                            "successful_submissions": 0,
+                        },
+                        False,
+                    )
+    except Exception as e:
+        # Fallback to sequential execution if parallel fails
+        if dist_info["is_main_process"]:
+            print(
+                f"⚠️ [Rank {dist_info['rank']}] Parallel game execution failed: {e}, falling back to sequential"
+            )
+
+        for game_idx, player_submissions in game_preparations:
+            try:
+                game_result = game_env.play_game(player_submissions)
+                game_results[game_idx] = (game_result, True)
+            except Exception as e:
+                game_results[game_idx] = (
+                    {
+                        "error": str(e),
+                        "player_rewards": {0: -1.0, 1: -1.0},
+                        "successful_submissions": 0,
+                    },
+                    False,
+                )
+
+    parallel_time = time.time() - parallel_start
+
+    if dist_info["is_main_process"]:
+        print(
+            f"🚀 [Rank {dist_info['rank']}] Game execution completed in {parallel_time:.2f}s using {max_workers} workers"
+        )
+
+    # ============================================================================
+    # PHASE 3: Process results and create trajectories
+    # ============================================================================
+    for game_idx, player_submissions in game_preparations:
+        game_result, execution_success = game_results[game_idx]
+
+        # Create trajectory object
+        trajectory = StrategyGameTrajectory(
+            player1_data={
+                "prompt": player_submissions[0].prompt,
+                "response": player_submissions[0].response,
+                "code": player_submissions[0].extracted_code,
+                "compilation_success": player_submissions[0].compilation_success,
+                "compilation_error": player_submissions[0].compilation_error,
+                "role": "player1",
+            },
+            player2_data={
+                "prompt": player_submissions[1].prompt,
+                "response": player_submissions[1].response,
+                "code": player_submissions[1].extracted_code,
+                "compilation_success": player_submissions[1].compilation_success,
+                "compilation_error": player_submissions[1].compilation_error,
+                "role": "player2",
+            },
+            game_outcome={
+                "player1_reward": (
+                    game_result.player_rewards.get(0, -1.0)
+                    if hasattr(game_result, "player_rewards")
+                    else game_result.get("player_rewards", {}).get(0, -1.0)
+                ),
+                "player2_reward": (
+                    game_result.player_rewards.get(1, -1.0)
+                    if hasattr(game_result, "player_rewards")
+                    else game_result.get("player_rewards", {}).get(1, -1.0)
+                ),
+                "successful_submissions": (
+                    game_result.successful_submissions
+                    if hasattr(game_result, "successful_submissions")
+                    else game_result.get("successful_submissions", 0)
+                ),
+            },
+            game_result=game_result,
         )
         trajectories.append(trajectory)
 
@@ -796,46 +1038,64 @@ for step in range(num_steps):
         else:
             local_stats["execution_failures"] += 1
 
-        # Track noise and WSLS bot statistics
-        game_data = trajectory.game_result.game_data
-        if "noise_rounds" in game_data:
-            noise_rounds = game_data["noise_rounds"]
-            local_stats["total_noise_rounds"] += noise_rounds
-            if noise_rounds > 0:
-                local_stats["games_with_noise"] += 1
+        # Track noise and WSLS bot statistics (only if game executed successfully)
+        if execution_success and hasattr(game_result, "game_data"):
+            game_data = game_result.game_data
+            if "noise_rounds" in game_data:
+                noise_rounds = game_data["noise_rounds"]
+                local_stats["total_noise_rounds"] += noise_rounds
+                if noise_rounds > 0:
+                    local_stats["games_with_noise"] += 1
 
-        if game_data.get("wsls_bot_used", False):
-            local_stats["wsls_bot_games"] += 1
-            # Check if WSLS bot (player 2) won
-            if p2_reward > p1_reward:
-                local_stats["wsls_bot_wins"] += 1
+            if game_data.get("wsls_bot_used", False):
+                local_stats["wsls_bot_games"] += 1
+                # Check if WSLS bot (player 2) won
+                if p2_reward > p1_reward:
+                    local_stats["wsls_bot_wins"] += 1
 
         # Show detailed results for first few games (only on main process)
-        if dist_info["is_main_process"] and game_idx < 2:  # Show fewer games in distributed mode
+        if (
+            dist_info["is_main_process"] and game_idx < 2
+        ):  # Show fewer games in distributed mode
             debug_config = config.get("debug", {})
-            show_detailed_games = debug_config.get("show_detailed_games", 1)  # Reduced for distributed
+            show_detailed_games = debug_config.get(
+                "show_detailed_games", 1
+            )  # Reduced for distributed
             max_code_chars = debug_config.get("max_code_chars", 200)  # Reduced output
-            show_execution_details = debug_config.get("show_execution_details", False)  # Reduced verbosity
+            show_execution_details = debug_config.get(
+                "show_execution_details", False
+            )  # Reduced verbosity
 
             if game_idx < show_detailed_games:
                 print(f"\n{'='*40}")
-                print(f"🎮 [Rank {dist_info['rank']}] Game {game_idx + 1}/{games_per_step_per_gpu} - Step {step + 1}")
+                print(
+                    f"🎮 [Rank {dist_info['rank']}] Game {game_idx + 1}/{games_per_step_per_gpu} - Step {step + 1}"
+                )
 
-                # Show special game features
-                game_features = []
-                if game_data.get("wsls_bot_used", False):
-                    game_features.append("🤖 WSLS Bot")
-                if game_data.get("noise_rounds", 0) > 0:
-                    game_features.append(f"🎲 Noise ({game_data['noise_rounds']} rounds)")
+                # Show special game features (only if successful execution)
+                if execution_success and hasattr(game_result, "game_data"):
+                    game_data = game_result.game_data
+                    game_features = []
+                    if game_data.get("wsls_bot_used", False):
+                        game_features.append("🤖 WSLS Bot")
+                    if game_data.get("noise_rounds", 0) > 0:
+                        game_features.append(
+                            f"🎲 Noise ({game_data['noise_rounds']} rounds)"
+                        )
 
-                if game_features:
-                    print(f"Features: {' | '.join(game_features)}")
+                    if game_features:
+                        print(f"Features: {' | '.join(game_features)}")
 
                 print(f"🎯 Rewards: P1={p1_reward:+.1f}, P2={p2_reward:+.1f}")
+                print(
+                    f"⏱️ Parallel execution: {parallel_time:.2f}s with {max_workers} workers"
+                )
                 print(f"{'='*40}")
 
     # Compute local policy gradient loss
-    local_loss = compute_distributed_policy_gradient_loss(model, tokenizer, trajectories, rae, device)
+    local_loss = compute_distributed_policy_gradient_loss(
+        model, tokenizer, trajectories, rae, device
+    )
 
     # Synchronize RAE baselines across all processes
     rae.sync_baselines()
@@ -843,33 +1103,37 @@ for step in range(num_steps):
     # Average gradients across all processes (DDP handles this automatically)
     optimizer.zero_grad()
     local_loss.backward()
-    
+
     # Gradient clipping (apply before DDP sync)
     torch.nn.utils.clip_grad_norm_(
         model.parameters(), max_norm=config["training"]["gradient_clip_norm"]
     )
-    
+
     optimizer.step()
 
     # Gather statistics from all processes for logging (only on main process)
     if dist_info["is_main_process"]:
         # Convert local stats to tensors for all_reduce
         if dist_info["world_size"] > 1:
-            stats_tensor = torch.tensor([
-                local_stats["player1_wins"],
-                local_stats["player2_wins"], 
-                local_stats["ties"],
-                local_stats["successful_games"],
-                local_stats["execution_failures"],
-                local_stats["total_noise_rounds"],
-                local_stats["games_with_noise"],
-                local_stats["wsls_bot_games"],
-                local_stats["wsls_bot_wins"]
-            ], dtype=torch.float32, device=device)
-            
+            stats_tensor = torch.tensor(
+                [
+                    local_stats["player1_wins"],
+                    local_stats["player2_wins"],
+                    local_stats["ties"],
+                    local_stats["successful_games"],
+                    local_stats["execution_failures"],
+                    local_stats["total_noise_rounds"],
+                    local_stats["games_with_noise"],
+                    local_stats["wsls_bot_games"],
+                    local_stats["wsls_bot_wins"],
+                ],
+                dtype=torch.float32,
+                device=device,
+            )
+
             # Sum across all processes
             dist.all_reduce(stats_tensor, op=dist.ReduceOp.SUM)
-            
+
             # Update global stats
             global_stats = {
                 "player1_wins": int(stats_tensor[0].item()),
@@ -887,13 +1151,31 @@ for step in range(num_steps):
 
         # Calculate rates and averages
         rae_stats = rae.get_stats()
-        success_rate = global_stats["successful_games"] / total_games_per_step if total_games_per_step > 0 else 0
-        avg_noise_rounds_per_game = (
-            global_stats["total_noise_rounds"] / total_games_per_step if total_games_per_step > 0 else 0
+        success_rate = (
+            global_stats["successful_games"] / total_games_per_step
+            if total_games_per_step > 0
+            else 0
         )
-        noise_game_rate = global_stats["games_with_noise"] / total_games_per_step if total_games_per_step > 0 else 0
-        wsls_bot_rate = global_stats["wsls_bot_games"] / total_games_per_step if total_games_per_step > 0 else 0
-        wsls_bot_win_rate = global_stats["wsls_bot_wins"] / global_stats["wsls_bot_games"] if global_stats["wsls_bot_games"] > 0 else 0
+        avg_noise_rounds_per_game = (
+            global_stats["total_noise_rounds"] / total_games_per_step
+            if total_games_per_step > 0
+            else 0
+        )
+        noise_game_rate = (
+            global_stats["games_with_noise"] / total_games_per_step
+            if total_games_per_step > 0
+            else 0
+        )
+        wsls_bot_rate = (
+            global_stats["wsls_bot_games"] / total_games_per_step
+            if total_games_per_step > 0
+            else 0
+        )
+        wsls_bot_win_rate = (
+            global_stats["wsls_bot_wins"] / global_stats["wsls_bot_games"]
+            if global_stats["wsls_bot_games"] > 0
+            else 0
+        )
 
         stats = {
             "step": step,
@@ -907,6 +1189,8 @@ for step in range(num_steps):
             "noise_game_rate": noise_game_rate,
             "wsls_bot_rate": wsls_bot_rate,
             "wsls_bot_win_rate": wsls_bot_win_rate,
+            "parallel_execution_time": parallel_time,
+            "cpu_workers": max_workers,
             **rae_stats,
         }
 
@@ -914,7 +1198,9 @@ for step in range(num_steps):
         print(
             f"🏆 Global wins - P1: {global_stats['player1_wins']}, P2: {global_stats['player2_wins']}, Ties: {global_stats['ties']}"
         )
-        print(f"💻 Success rate: {success_rate:.2%} ({global_stats['successful_games']}/{total_games_per_step})")
+        print(
+            f"💻 Success rate: {success_rate:.2%} ({global_stats['successful_games']}/{total_games_per_step})"
+        )
         print(f"❌ Execution failures: {global_stats['execution_failures']}")
         print(
             f"📈 Baselines - P1: {rae_stats['baseline_player1']:.3f}, P2: {rae_stats['baseline_player2']:.3f}"
@@ -929,6 +1215,11 @@ for step in range(num_steps):
                 print(
                     f"🤖 WSLS bot: {global_stats['wsls_bot_games']}/{total_games_per_step} games ({wsls_bot_rate:.1%}), won {wsls_bot_win_rate:.1%}"
                 )
+
+        # Print parallel execution performance
+        print(
+            f"⚙️ Game execution: {parallel_time:.2f}s using {max_workers} CPU workers (parallel speedup)"
+        )
 
         if WANDB_ENABLED and wandb.run:
             wandb.log(stats)
@@ -949,7 +1240,7 @@ for step in range(num_steps):
         # Seed for consistent evaluation
         seed_manager.seed_for_evaluation_auto(f"interval_step_{step + 1}")
         # Use the underlying model for evaluation (unwrap DDP if needed)
-        eval_model = model.module if hasattr(model, 'module') else model
+        eval_model = model.module if hasattr(model, "module") else model
         interval_results = mbpp_evaluator.evaluate_model(
             eval_model, tokenizer, step=step + 1, phase="interval"
         )
@@ -966,12 +1257,14 @@ for step in range(num_steps):
             )
 
     # Save checkpoint periodically (only on main process)
-    if (step + 1) % config["training"]["save_interval"] == 0 and dist_info["is_main_process"]:
+    if (step + 1) % config["training"]["save_interval"] == 0 and dist_info[
+        "is_main_process"
+    ]:
         checkpoint_dir = f"{config['training']['checkpoint_dir']}/step_{step + 1}"
         os.makedirs(checkpoint_dir, exist_ok=True)
-        
+
         # Save the underlying model (unwrap DDP if needed)
-        save_model = model.module if hasattr(model, 'module') else model
+        save_model = model.module if hasattr(model, "module") else model
         save_model.save_pretrained(checkpoint_dir)
         tokenizer.save_pretrained(checkpoint_dir)
 
@@ -985,15 +1278,17 @@ if dist_info["is_main_process"]:
     print("🏁 Distributed SPIRAL prisoner's dilemma training completed!")
 
 # Run final MBPP evaluation if enabled (only on main process)
-if (config["evaluation"].get("enabled_final", True) and 
-    mbpp_evaluator is not None and 
-    mbpp_evaluator.config.enabled and 
-    dist_info["is_main_process"]):
+if (
+    config["evaluation"].get("enabled_final", True)
+    and mbpp_evaluator is not None
+    and mbpp_evaluator.config.enabled
+    and dist_info["is_main_process"]
+):
     print("🧪 Running final MBPP evaluation...")
     # Seed for consistent evaluation
     seed_manager.seed_for_evaluation_auto("final")
     # Use the underlying model for evaluation (unwrap DDP if needed)
-    eval_model = model.module if hasattr(model, 'module') else model
+    eval_model = model.module if hasattr(model, "module") else model
     final_results = mbpp_evaluator.evaluate_model(
         eval_model, tokenizer, step=num_steps, phase="final"
     )
@@ -1013,9 +1308,9 @@ if (config["evaluation"].get("enabled_final", True) and
 if dist_info["is_main_process"]:
     final_checkpoint_dir = f"{config['training']['checkpoint_dir']}/final"
     os.makedirs(final_checkpoint_dir, exist_ok=True)
-    
+
     # Save the underlying model (unwrap DDP if needed)
-    save_model = model.module if hasattr(model, 'module') else model
+    save_model = model.module if hasattr(model, "module") else model
     save_model.save_pretrained(final_checkpoint_dir)
     tokenizer.save_pretrained(final_checkpoint_dir)
 
