@@ -487,13 +487,25 @@ if dist_info["is_main_process"]:
     print("⏳ This may take 2-3 minutes depending on model size and storage speed...")
 
 # Load model on each GPU
+# Try to use Flash-Attention 2 if available, otherwise fall back to default attention
+extra_model_kwargs = {}
+try:
+    import flash_attn_2_cuda  # noqa: F401
+
+    extra_model_kwargs["attn_implementation"] = "flash_attention_2"
+    if dist_info["is_main_process"]:
+        print("✅ Flash-Attention 2 detected – using it for faster inference")
+except ImportError:
+    if dist_info["is_main_process"]:
+        print("⚠️ Flash-Attention 2 not installed – falling back to standard attention")
+
 model1 = AutoModelForCausalLM.from_pretrained(
     model_id,
     torch_dtype="auto",
     device_map={"": dist_info["local_rank"]},  # Map to specific GPU
     cache_dir=cache_dir,
     local_files_only=offline_mode,
-    attn_implementation="flash_attention_2",
+    **extra_model_kwargs,
 )
 
 if dist_info["is_main_process"]:
