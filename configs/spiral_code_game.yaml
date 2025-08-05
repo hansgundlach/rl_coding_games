@@ -98,7 +98,7 @@ wandb:
 
 # vLLM configuration (optional, for faster inference)
 vllm:
-  enabled: true              # Disabled by default
+  enabled: false              # Disabled by default
   gpu_memory_utilization: 0.85
   max_model_len: 2048
   trust_remote_code: true

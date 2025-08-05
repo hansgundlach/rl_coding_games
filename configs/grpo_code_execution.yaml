@@ -100,7 +100,7 @@ rewards:
 # --- vLLM Integration Settings ---
 vllm:
   # Enable vLLM for faster inference (offline-compatible for Supercloud V100s)
-  enabled: True               # Set to False to use standard HuggingFace generation
+  enabled: False              # Set to False to use standard HuggingFace generation
   
   # Server Configuration (V100-optimized for Supercloud)
   server:
