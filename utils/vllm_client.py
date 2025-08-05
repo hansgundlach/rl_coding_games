@@ -88,6 +88,8 @@ class VLLMServerManager:
                 str(self.config.server["swap_space"]),
                 "--dtype",
                 self.config.server["dtype"],
+                "--tokenizer-mode",
+                "auto",
             ]
 
             # Add offline mode flags
