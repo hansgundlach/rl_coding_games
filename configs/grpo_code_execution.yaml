@@ -53,7 +53,7 @@ wandb:
 # --- Evaluation Settings (MBPP) ---
 evaluation:
   # Evaluation Control
-  enabled: True                    # Enable/disable evaluation entirely
+  enabled: False                   # Enable/disable evaluation entirely
   enabled_initial: True            # Run initial MBPP evaluation
   enabled_final: True              # Run final MBPP evaluation
   num_questions: 20                # Number of MBPP problems to evaluate
