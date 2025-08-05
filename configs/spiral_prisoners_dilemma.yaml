@@ -53,6 +53,10 @@ training:
   games_per_step_other: 4           # Standard for A100+ GPUs
   save_interval: 20                 # Save checkpoint every N steps
   checkpoint_dir: "checkpoints/spiral_prisoners_dilemma"
+  
+  # Parallel execution settings
+  parallel_games: true              # Enable parallel game simulation
+  num_workers: null                 # Number of worker threads (null = auto-detect CPU cores)
 
 # Evaluation configuration
 evaluation:

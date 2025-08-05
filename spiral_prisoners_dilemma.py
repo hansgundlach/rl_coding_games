@@ -36,6 +36,7 @@ from dataclasses import dataclass
 import json
 import yaml
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 
 print("🚀 Starting SPIRAL Prisoner's Dilemma Training...")
 print("📋 Initializing components...")
@@ -357,13 +358,10 @@ class RoleConditionedAdvantageEstimation:
         }
 
 
-def play_strategy_game(model, tokenizer, device, game_env, step: int = 0) -> StrategyGameTrajectory:
-    """
-    Play a single strategy game between two instances of the same model.
-
-    Returns complete trajectory data for training.
-    """
-    # Generate strategy code for both players
+def generate_strategy_pair(
+    model, tokenizer, device, game_env, step: int, game_idx: int
+) -> Tuple[PlayerSubmission, PlayerSubmission]:
+    """Generate strategy code for both players (GPU-bound, sequential)."""
     player_submissions = []
 
     for player_id in [0, 1]:
@@ -377,8 +375,8 @@ def play_strategy_game(model, tokenizer, device, game_env, step: int = 0) -> Str
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        # Seed for deterministic generation per player
-        seed_manager.seed_for_generation(step=step, generation_idx=player_id)
+        # Seed for deterministic generation per player and game
+        seed_manager.seed_for_generation(step=step, generation_idx=game_idx * 2 + player_id)
 
         with torch.no_grad():
             outputs = model.generate(
@@ -418,24 +416,31 @@ def play_strategy_game(model, tokenizer, device, game_env, step: int = 0) -> Str
         )
         player_submissions.append(submission)
 
+    return player_submissions[0], player_submissions[1]
+
+
+def simulate_single_game(strategy_pair_with_env) -> StrategyGameTrajectory:
+    """Simulate a single game with given strategies (CPU-bound, can be parallelized)."""
+    player1_submission, player2_submission, game_env = strategy_pair_with_env
+    
     # Play the game
-    game_result = game_env.play_game(player_submissions)
+    game_result = game_env.play_game([player1_submission, player2_submission])
 
     return StrategyGameTrajectory(
         player1_data={
-            "prompt": player_submissions[0].prompt,
-            "response": player_submissions[0].response,
-            "code": player_submissions[0].extracted_code,
-            "compilation_success": player_submissions[0].compilation_success,
-            "compilation_error": player_submissions[0].compilation_error,
+            "prompt": player1_submission.prompt,
+            "response": player1_submission.response,
+            "code": player1_submission.extracted_code,
+            "compilation_success": player1_submission.compilation_success,
+            "compilation_error": player1_submission.compilation_error,
             "role": "player1",
         },
         player2_data={
-            "prompt": player_submissions[1].prompt,
-            "response": player_submissions[1].response,
-            "code": player_submissions[1].extracted_code,
-            "compilation_success": player_submissions[1].compilation_success,
-            "compilation_error": player_submissions[1].compilation_error,
+            "prompt": player2_submission.prompt,
+            "response": player2_submission.response,
+            "code": player2_submission.extracted_code,
+            "compilation_success": player2_submission.compilation_success,
+            "compilation_error": player2_submission.compilation_error,
             "role": "player2",
         },
         game_outcome={
@@ -445,6 +450,21 @@ def play_strategy_game(model, tokenizer, device, game_env, step: int = 0) -> Str
         },
         game_result=game_result,
     )
+
+
+def play_strategy_game(
+    model, tokenizer, device, game_env, step: int = 0
+) -> StrategyGameTrajectory:
+    """
+    Play a single strategy game between two instances of the same model.
+    
+    This is the legacy function for backward compatibility.
+    Returns complete trajectory data for training.
+    """
+    player1_submission, player2_submission = generate_strategy_pair(
+        model, tokenizer, device, game_env, step, 0
+    )
+    return simulate_single_game((player1_submission, player2_submission, game_env))
 
 
 def compute_policy_gradient_loss(
@@ -661,10 +681,43 @@ for step in range(num_steps):
     wsls_bot_games = 0
     wsls_bot_wins = 0
 
+    # ------------------------------------------------------------------
+    # Phase 1: Generate all strategy pairs (GPU-bound, sequential)
+    # ------------------------------------------------------------------
+    print(f"🧠 Generating strategies for {games_per_step} games...")
+    strategy_pairs = []
+    
     for game_idx in range(games_per_step):
-        trajectory = play_strategy_game(model, tokenizer, device, game_env, step=step)
-        trajectories.append(trajectory)
+        player1_submission, player2_submission = generate_strategy_pair(
+            model, tokenizer, device, game_env, step, game_idx
+        )
+        strategy_pairs.append((player1_submission, player2_submission, game_env))
 
+    # ------------------------------------------------------------------
+    # Phase 2: Simulate all games (CPU-bound, parallel)
+    # ------------------------------------------------------------------
+    import time
+    parallel_games = config["training"].get("parallel_games", True)
+    num_workers = config["training"].get("num_workers", None)
+    
+    simulation_start = time.time()
+    if parallel_games and len(strategy_pairs) > 1:
+        max_workers = num_workers or (os.cpu_count() or 1)
+        print(f"⚙️  Running {games_per_step} games in parallel with {max_workers} workers")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            trajectories = list(executor.map(simulate_single_game, strategy_pairs))
+    else:
+        print(f"🔄 Running {games_per_step} games sequentially")
+        trajectories = [simulate_single_game(pair) for pair in strategy_pairs]
+    
+    simulation_time = time.time() - simulation_start
+    print(f"⏱️  Game simulation completed in {simulation_time:.2f}s ({simulation_time/games_per_step:.3f}s per game)")
+
+    # ------------------------------------------------------------------
+    # Phase 3: Collect statistics and metrics
+    # ------------------------------------------------------------------
+    for trajectory in trajectories:
         # Track statistics
         p1_reward = trajectory.game_outcome["player1_reward"]
         p2_reward = trajectory.game_outcome["player2_reward"]
@@ -695,91 +748,98 @@ for step in range(num_steps):
             if p2_reward > p1_reward:
                 wsls_bot_wins += 1
 
-        # Show detailed results for first few games (configurable)
-        debug_config = config.get("debug", {})
-        show_detailed_games = debug_config.get("show_detailed_games", 2)
-        max_code_chars = debug_config.get("max_code_chars", 500)
-        show_full_responses = debug_config.get("show_full_responses", False)
-        show_execution_details = debug_config.get("show_execution_details", True)
+    # ------------------------------------------------------------------
+    # Phase 4: Debug output for first few games
+    # ------------------------------------------------------------------
+    debug_config = config.get("debug", {})
+    show_detailed_games = debug_config.get("show_detailed_games", 2)
+    max_code_chars = debug_config.get("max_code_chars", 500)
+    show_full_responses = debug_config.get("show_full_responses", False)
+    show_execution_details = debug_config.get("show_execution_details", True)
 
-        if game_idx < show_detailed_games:
-            print(f"\n{'='*60}")
-            print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
+    for game_idx in range(min(show_detailed_games, len(trajectories))):
+        trajectory = trajectories[game_idx]
+        game_data = trajectory.game_result.game_data
+        p1_reward = trajectory.game_outcome["player1_reward"]
+        p2_reward = trajectory.game_outcome["player2_reward"]
+        
+        print(f"\n{'='*60}")
+        print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
 
-            # Show special game features
-            game_features = []
-            if game_data.get("wsls_bot_used", False):
-                game_features.append("🤖 WSLS Bot")
-            if game_data.get("noise_rounds", 0) > 0:
-                game_features.append(f"🎲 Noise ({game_data['noise_rounds']} rounds)")
+        # Show special game features
+        game_features = []
+        if game_data.get("wsls_bot_used", False):
+            game_features.append("🤖 WSLS Bot")
+        if game_data.get("noise_rounds", 0) > 0:
+            game_features.append(f"🎲 Noise ({game_data['noise_rounds']} rounds)")
 
-            if game_features:
-                print(f"Features: {' | '.join(game_features)}")
+        if game_features:
+            print(f"Features: {' | '.join(game_features)}")
 
-            print(f"{'='*60}")
+        print(f"{'='*60}")
 
-            # Show player strategies
-            print("🤖 Player 1 Strategy:")
+        # Show player strategies
+        print("🤖 Player 1 Strategy:")
+        if show_full_responses:
+            print(f"   Full Response: {trajectory.player1_data['response']}")
+
+        player1_code = trajectory.player1_data["code"]
+        if len(player1_code) > max_code_chars:
+            print(f"   Code: {player1_code[:max_code_chars]}... [truncated]")
+        else:
+            print(f"   Code: {player1_code}")
+
+        print(
+            f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}"
+        )
+        if (
+            not trajectory.player1_data["compilation_success"]
+            and show_execution_details
+        ):
+            print(f"   Error: {trajectory.player1_data['compilation_error']}")
+
+        print("🤖 Player 2 Strategy:")
+        if game_data.get("wsls_bot_used", False):
+            print("   Using WSLS (Win-Stay/Lose-Shift) Bot")
+            print(
+                "   Strategy: Cooperate if last payoff ≥ 3, otherwise switch action"
+            )
+        else:
             if show_full_responses:
-                print(f"   Full Response: {trajectory.player1_data['response']}")
+                print(f"   Full Response: {trajectory.player2_data['response']}")
 
-            player1_code = trajectory.player1_data["code"]
-            if len(player1_code) > max_code_chars:
-                print(f"   Code: {player1_code[:max_code_chars]}... [truncated]")
+            player2_code = trajectory.player2_data["code"]
+            if len(player2_code) > max_code_chars:
+                print(f"   Code: {player2_code[:max_code_chars]}... [truncated]")
             else:
-                print(f"   Code: {player1_code}")
+                print(f"   Code: {player2_code}")
 
             print(
-                f"   Compilation: {'✅' if trajectory.player1_data['compilation_success'] else '❌'}"
+                f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
             )
             if (
-                not trajectory.player1_data["compilation_success"]
+                not trajectory.player2_data["compilation_success"]
                 and show_execution_details
             ):
-                print(f"   Error: {trajectory.player1_data['compilation_error']}")
+                print(f"   Error: {trajectory.player2_data['compilation_error']}")
 
-            print("🤖 Player 2 Strategy:")
-            if game_data.get("wsls_bot_used", False):
-                print("   Using WSLS (Win-Stay/Lose-Shift) Bot")
-                print(
-                    "   Strategy: Cooperate if last payoff ≥ 3, otherwise switch action"
-                )
-            else:
-                if show_full_responses:
-                    print(f"   Full Response: {trajectory.player2_data['response']}")
+        # Show game results
+        if show_execution_details and (
+            hasattr(trajectory.game_result, "game_data")
+            and "final_payoffs" in trajectory.game_result.game_data
+        ):
+            payoffs = trajectory.game_result.game_data["final_payoffs"]
+            print(f"\n🏆 Final Scores:")
+            print(f"   Player 1: {payoffs.get(0, 'N/A')} points")
+            print(f"   Player 2: {payoffs.get(1, 'N/A')} points")
+            print(
+                f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}"
+            )
 
-                player2_code = trajectory.player2_data["code"]
-                if len(player2_code) > max_code_chars:
-                    print(f"   Code: {player2_code[:max_code_chars]}... [truncated]")
-                else:
-                    print(f"   Code: {player2_code}")
-
-                print(
-                    f"   Compilation: {'✅' if trajectory.player2_data['compilation_success'] else '❌'}"
-                )
-                if (
-                    not trajectory.player2_data["compilation_success"]
-                    and show_execution_details
-                ):
-                    print(f"   Error: {trajectory.player2_data['compilation_error']}")
-
-            # Show game results
-            if show_execution_details and (
-                hasattr(trajectory.game_result, "game_data")
-                and "final_payoffs" in trajectory.game_result.game_data
-            ):
-                payoffs = trajectory.game_result.game_data["final_payoffs"]
-                print(f"\n🏆 Final Scores:")
-                print(f"   Player 1: {payoffs.get(0, 'N/A')} points")
-                print(f"   Player 2: {payoffs.get(1, 'N/A')} points")
-                print(
-                    f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}"
-                )
-
-            print(f"\n🎯 Rewards:")
-            print(f"   Player 1: {p1_reward:+.1f}")
-            print(f"   Player 2: {p2_reward:+.1f}")
-            print(f"{'='*60}")
+        print(f"\n🎯 Rewards:")
+        print(f"   Player 1: {p1_reward:+.1f}")
+        print(f"   Player 2: {p2_reward:+.1f}")
+        print(f"{'='*60}")
 
     # Compute policy gradient loss using RAE
     loss = compute_policy_gradient_loss(model, tokenizer, trajectories, rae, device)
