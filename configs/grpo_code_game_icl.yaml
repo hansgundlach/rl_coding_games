@@ -22,10 +22,10 @@ lora:
 
 # ICL Memory Configuration
 icl:
-  memory_size: 0                # Max examples to keep in memory
-  refresh_every: 12             # Games between memory updates
+  memory_size: 5               # Max examples to keep in memory
+  refresh_every: 5             # Games between memory updates
   snapshot_max: 8               # Max frozen snapshots to keep
-  p_latest: 0.5                 # 60% latest ICL, 40% frozen snapshots
+  p_latest: 0.6                 # 60% latest ICL, 40% frozen snapshots
 
 # Game Configuration
 game:

@@ -376,7 +376,9 @@ def generate_strategy_pair(
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
         # Seed for deterministic generation per player and game
-        seed_manager.seed_for_generation(step=step, generation_idx=game_idx * 2 + player_id)
+        seed_manager.seed_for_generation(
+            step=step, generation_idx=game_idx * 2 + player_id
+        )
 
         with torch.no_grad():
             outputs = model.generate(
@@ -422,7 +424,7 @@ def generate_strategy_pair(
 def simulate_single_game(strategy_pair_with_env) -> StrategyGameTrajectory:
     """Simulate a single game with given strategies (CPU-bound, can be parallelized)."""
     player1_submission, player2_submission, game_env = strategy_pair_with_env
-    
+
     # Play the game
     game_result = game_env.play_game([player1_submission, player2_submission])
 
@@ -457,7 +459,7 @@ def play_strategy_game(
 ) -> StrategyGameTrajectory:
     """
     Play a single strategy game between two instances of the same model.
-    
+
     This is the legacy function for backward compatibility.
     Returns complete trajectory data for training.
     """
@@ -686,7 +688,7 @@ for step in range(num_steps):
     # ------------------------------------------------------------------
     print(f"🧠 Generating strategies for {games_per_step} games...")
     strategy_pairs = []
-    
+
     for game_idx in range(games_per_step):
         player1_submission, player2_submission = generate_strategy_pair(
             model, tokenizer, device, game_env, step, game_idx
@@ -697,22 +699,27 @@ for step in range(num_steps):
     # Phase 2: Simulate all games (CPU-bound, parallel)
     # ------------------------------------------------------------------
     import time
+
     parallel_games = config["training"].get("parallel_games", True)
     num_workers = config["training"].get("num_workers", None)
-    
+
     simulation_start = time.time()
     if parallel_games and len(strategy_pairs) > 1:
         max_workers = num_workers or (os.cpu_count() or 1)
-        print(f"⚙️  Running {games_per_step} games in parallel with {max_workers} workers")
-        
+        print(
+            f"⚙️  Running {games_per_step} games in parallel with {max_workers} workers"
+        )
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             trajectories = list(executor.map(simulate_single_game, strategy_pairs))
     else:
         print(f"🔄 Running {games_per_step} games sequentially")
         trajectories = [simulate_single_game(pair) for pair in strategy_pairs]
-    
+
     simulation_time = time.time() - simulation_start
-    print(f"⏱️  Game simulation completed in {simulation_time:.2f}s ({simulation_time/games_per_step:.3f}s per game)")
+    print(
+        f"⏱️  Game simulation completed in {simulation_time:.2f}s ({simulation_time/games_per_step:.3f}s per game)"
+    )
 
     # ------------------------------------------------------------------
     # Phase 3: Collect statistics and metrics
@@ -762,7 +769,7 @@ for step in range(num_steps):
         game_data = trajectory.game_result.game_data
         p1_reward = trajectory.game_outcome["player1_reward"]
         p2_reward = trajectory.game_outcome["player2_reward"]
-        
+
         print(f"\n{'='*60}")
         print(f"🎮 Game {game_idx + 1}/{games_per_step} - Step {step + 1}")
 
@@ -801,9 +808,7 @@ for step in range(num_steps):
         print("🤖 Player 2 Strategy:")
         if game_data.get("wsls_bot_used", False):
             print("   Using WSLS (Win-Stay/Lose-Shift) Bot")
-            print(
-                "   Strategy: Cooperate if last payoff ≥ 3, otherwise switch action"
-            )
+            print("   Strategy: Cooperate if last payoff ≥ 3, otherwise switch action")
         else:
             if show_full_responses:
                 print(f"   Full Response: {trajectory.player2_data['response']}")
@@ -832,9 +837,7 @@ for step in range(num_steps):
             print(f"\n🏆 Final Scores:")
             print(f"   Player 1: {payoffs.get(0, 'N/A')} points")
             print(f"   Player 2: {payoffs.get(1, 'N/A')} points")
-            print(
-                f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}"
-            )
+            print(f"   Winner: {trajectory.game_result.game_data.get('winner', 'N/A')}")
 
         print(f"\n🎯 Rewards:")
         print(f"   Player 1: {p1_reward:+.1f}")
