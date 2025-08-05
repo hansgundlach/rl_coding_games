@@ -444,8 +444,31 @@ if config.get("vllm", {}).get("enabled", False):
             cache_dir, "models--" + model_id.replace("/", "--")
         )
         if os.path.exists(hf_cache_path):
-            vllm_model_path = hf_cache_path
-            print(f"🔧 Set vLLM model path to cached directory: {vllm_model_path}")
+            # Look for snapshots directory
+            snapshots_dir = os.path.join(hf_cache_path, "snapshots")
+            if os.path.exists(snapshots_dir):
+                # Find the first (and typically only) snapshot directory
+                snapshot_dirs = [
+                    d
+                    for d in os.listdir(snapshots_dir)
+                    if os.path.isdir(os.path.join(snapshots_dir, d))
+                ]
+                if snapshot_dirs:
+                    snapshot_path = os.path.join(snapshots_dir, snapshot_dirs[0])
+                    # Verify this snapshot has config.json
+                    if os.path.exists(os.path.join(snapshot_path, "config.json")):
+                        vllm_model_path = snapshot_path
+                        print(
+                            f"🔧 Set vLLM model path to cached snapshot: {vllm_model_path}"
+                        )
+                    else:
+                        print(
+                            f"⚠️ Snapshot directory found but no config.json: {snapshot_path}"
+                        )
+                else:
+                    print(f"⚠️ No snapshot directories found in: {snapshots_dir}")
+            else:
+                print(f"⚠️ No snapshots directory found in: {hf_cache_path}")
         # Check for direct model_id path if not found in conventional cache
         elif os.path.exists(os.path.join(cache_dir, model_id)):
             vllm_model_path = os.path.join(cache_dir, model_id)
