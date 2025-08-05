@@ -437,8 +437,28 @@ vllm_integration = None
 if config.get("vllm", {}).get("enabled", False):
     print("🚀 Initializing vLLM integration...")
     try:
+        # Determine correct model path for vLLM or HF fallback
+        vllm_model_path = model_id
+        # Check for the huggingface_hub conventional cache path
+        hf_cache_path = os.path.join(
+            cache_dir, "models--" + model_id.replace("/", "--")
+        )
+        if os.path.exists(hf_cache_path):
+            vllm_model_path = hf_cache_path
+            print(f"🔧 Set vLLM model path to cached directory: {vllm_model_path}")
+        # Check for direct model_id path if not found in conventional cache
+        elif os.path.exists(os.path.join(cache_dir, model_id)):
+            vllm_model_path = os.path.join(cache_dir, model_id)
+            print(
+                f"🔧 Set vLLM model path to direct cached directory: {vllm_model_path}"
+            )
+        else:
+            print(
+                f"Model ID '{model_id}' not found in cache, vLLM will attempt to download it."
+            )
+
         vllm_integration = initialize_vllm_integration(
-            config["vllm"], model_id, offline_mode
+            config["vllm"], vllm_model_path, offline_mode=offline_mode
         )
         if vllm_integration.initialize():
             print("✅ vLLM server started successfully")
@@ -711,7 +731,9 @@ from transformers import TrainerCallback
 
 
 class IntervalEvaluationCallback(TrainerCallback):
-    def __init__(self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager):
+    def __init__(
+        self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager
+    ):
         self.evaluator = evaluator
         self.model = model
         self.tokenizer = tokenizer
@@ -740,7 +762,9 @@ class IntervalEvaluationCallback(TrainerCallback):
 
             print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
             # Seed for consistent evaluation
-            self.seed_manager.seed_for_evaluation_auto(f"interval_step_{state.global_step}")
+            self.seed_manager.seed_for_evaluation_auto(
+                f"interval_step_{state.global_step}"
+            )
             interval_results = self.evaluator.evaluate_model(
                 self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
