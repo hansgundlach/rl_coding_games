@@ -115,6 +115,11 @@ class VLLMServerManager:
                 return True
             else:
                 logger.error("❌ vLLM server failed to start")
+                # Capture and print stderr for debugging
+                if self.server_process and self.server_process.stderr:
+                    stderr_output = self.server_process.stderr.read()
+                    if stderr_output:
+                        logger.error(f"vLLM server stderr:\n{stderr_output}")
                 self.stop_server()
                 return False
 
