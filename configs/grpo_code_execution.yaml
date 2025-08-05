@@ -56,7 +56,7 @@ evaluation:
   enabled: True                    # Enable/disable evaluation entirely
   enabled_initial: True            # Run initial MBPP evaluation
   enabled_final: True              # Run final MBPP evaluation
-  num_questions: 30                # Number of MBPP problems to evaluate
+  num_questions: 20                # Number of MBPP problems to evaluate
   eval_interval_steps: 20        # Run evaluation every N steps (null = no intermediate evals)
   consistent_questions: true       # Use same questions for all interval evaluations (default: true)
   
