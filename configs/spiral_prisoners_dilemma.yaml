@@ -6,6 +6,9 @@ model:
   id: "Qwen/Qwen3-1.7B"
   cache_dir: "./model_cache"
 
+# Random seed configuration for reproducible experiments
+seed: 42  # Global seed for all random number generators
+
 # LoRA configuration for efficient training
 lora:
   task_type: "CAUSAL_LM"
@@ -58,6 +61,7 @@ evaluation:
   enabled_final: true         # Run evaluation after training  
   enabled_interval: true      # Run evaluation during training
   eval_interval_steps: 10     # Run evaluation every N steps
+  consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   
   # MBPP evaluation settings (for general coding ability)
   num_questions: 20            # Reduced for faster evaluation during training

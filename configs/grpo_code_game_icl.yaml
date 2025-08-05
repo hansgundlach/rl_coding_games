@@ -1,6 +1,9 @@
 # GRPO Code Game with ICL Memory Opponent Configuration
 # Generator trained with GRPO, Guesser uses frozen weights + ICL memory
 
+# Random seed configuration for reproducible experiments
+seed: 42  # Global seed for all random number generators
+
 # Model Configuration
 generator_model:
   id: "Qwen/Qwen3-1.7B"  # Trainable generator model
@@ -80,6 +83,7 @@ evaluation:
   enabled_final: true
   enabled_interval: true
   eval_interval_steps: 10
+  consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   num_questions: 20
   temperature: 0.2
   max_new_tokens: 512

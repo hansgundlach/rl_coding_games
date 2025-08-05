@@ -1,5 +1,8 @@
 # configs/spiral_self_play.yaml
 
+# --- Random Seed Configuration ---
+seed: 42  # Global seed for all random number generators
+
 # --- Model Settings ---
 model:
   id: "Qwen/Qwen2.5-1.5B"  # Base model to use
@@ -44,6 +47,7 @@ evaluation:
   enabled_final: True     # Run evaluation after training
   enabled_interval: True  # Run evaluation during training
   eval_interval_steps: 10  # Evaluate every N steps (for quick testing)
+  consistent_questions: true  # Use same questions for all interval evaluations (default: true)
 
   # MBPP Configuration
   num_questions: 10        # Small number for quick evaluation

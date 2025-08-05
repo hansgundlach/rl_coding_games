@@ -6,6 +6,9 @@ model:
   cache_dir: "./model_cache"
   # local_files_only will be set by the script based on offline_mode detection
 
+# --- Random Seed Configuration ---
+seed: 42  # Global seed for all random number generators
+
 # --- LoRA Configuration ---
 lora:
   task_type: "CAUSAL_LM"
@@ -55,6 +58,7 @@ evaluation:
   enabled_final: True              # Run final MBPP evaluation
   num_questions: 30                # Number of MBPP problems to evaluate
   eval_interval_steps: 20        # Run evaluation every N steps (null = no intermediate evals)
+  consistent_questions: true       # Use same questions for all interval evaluations (default: true)
   
   # Dataset Configuration
   dataset_path: null               # Path to MBPP dataset (null = auto-detect)

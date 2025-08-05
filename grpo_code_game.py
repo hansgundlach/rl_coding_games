@@ -105,6 +105,7 @@ if offline_mode:
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.env_loader import get_api_key
+from utils.seed_manager import SeedManager
 from evaluation import (
     MBPPEvaluator,
     create_eval_config_for_training,
@@ -121,6 +122,19 @@ if not offline_mode:
         print("⚠️ No W&B API key found, continuing without logging")
 else:
     print("🚫 Skipping W&B login (offline mode)")
+
+# Initialize comprehensive seed management
+print("🎲 Setting up seed management...")
+# Create a basic config for seed manager since this script doesn't use config files
+# All settings can be overridden by environment variables
+seed_config = {
+    "seed": int(os.environ.get("SEED", "42")),  # Default seed, override with SEED env var
+    "evaluation": {
+        "consistent_questions": os.environ.get("EVAL_CONSISTENT_QUESTIONS", "true").lower() in ("true", "1", "yes", "on")
+    }
+}
+seed_manager = SeedManager.from_config(seed_config)
+seed_manager.seed_everything()
 
 # Initialize MBPP evaluator with configurable settings
 eval_config = create_eval_config_for_training("grpo_code_game")
@@ -183,9 +197,9 @@ print(f"Created dataset: {dataset}")
 cache_dir = "./model_cache"
 os.makedirs(cache_dir, exist_ok=True)
 
-# Use exactly the model specified in config
-model_id = config["model"]["id"]
-print(f"📥 Using model from config: {model_id}")
+# Use default model (or from environment variable)
+model_id = os.environ.get("MODEL_ID", "Qwen/Qwen2.5-1.5B")
+print(f"📥 Using model: {model_id}")
 
 print(f"Loading trainable model: {model_id}")
 
@@ -272,6 +286,8 @@ def reward_function(completions, **kwargs):
 
         model_pred = ""  # Initialize model_pred to ensure it's always defined
         try:
+            # Seed for deterministic opponent predictions
+            seed_manager.seed_for_generation(step=i, generation_idx=0)
             model_pred_raw = generator2(
                 prompt2, max_new_tokens=200, do_sample=True, temperature=0.7
             )[0]["generated_text"]
@@ -412,13 +428,15 @@ print("Starting GRPO training...")
 # Initialize wandb run (only if not in offline mode)
 if not offline_mode:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    wandb.init(project=f"qwen-code-game-grpo-{timestamp}")
+    wandb.init(project=f"qwen-code-game-grpo-{timestamp}", config=seed_manager.get_seed_info())
 else:
     print("🚫 Skipping wandb initialization (offline mode)")
 
 # Run initial evaluation if enabled
 if mbpp_evaluator.should_evaluate(is_start=True):
     print("🧪 Running initial MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("initial")
     initial_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=0, phase="initial"
     )
@@ -439,6 +457,8 @@ trainer.train()
 # Run final evaluation if enabled
 if mbpp_evaluator.should_evaluate(is_end=True):
     print("🧪 Running final MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("final")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
     )

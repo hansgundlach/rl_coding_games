@@ -233,6 +233,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
+from utils.seed_manager import SeedManager
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
@@ -248,6 +249,11 @@ if WANDB_ENABLED:  # Only try to log in if W&B is enabled
 else:
     print("🚫 Skipping W&B login (W&B is disabled by user).")
 
+# Initialize comprehensive seed management
+print("🎲 Setting up seed management...")
+seed_manager = SeedManager.from_config(config)
+seed_manager.seed_everything()
+
 # Initialize MBPP evaluator with consolidated config
 print("🧪 Setting up MBPP evaluator...")
 
@@ -259,6 +265,7 @@ eval_config_dict.pop("enabled_initial", None)
 eval_config_dict.pop("enabled_final", None)
 eval_config_dict.pop("enabled_interval", None)
 eval_config_dict.pop("eval_interval_steps", None)
+eval_config_dict.pop("consistent_questions", None)
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
@@ -615,7 +622,7 @@ What list of numbers will this code output?"""
         # Fallback: return empty string if no prediction found
         return ""
 
-    def play_game(self, model, tokenizer, device) -> CodeGameTrajectory:
+    def play_game(self, model, tokenizer, device, step: int = 0) -> CodeGameTrajectory:
         """
         Play a single game between two players (same model with different roles).
 
@@ -629,6 +636,9 @@ What list of numbers will this code output?"""
         )
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        # Seed for deterministic generator response
+        seed_manager.seed_for_generation(step=step, generation_idx=0)
 
         with torch.no_grad():
             generator_outputs = model.generate(
@@ -671,6 +681,9 @@ What list of numbers will this code output?"""
         )
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        # Seed for deterministic guesser response
+        seed_manager.seed_for_generation(step=step, generation_idx=1)
 
         with torch.no_grad():
             guesser_outputs = model.generate(
@@ -1102,7 +1115,7 @@ if WANDB_ENABLED:
     # Create human-readable timestamp: Jul31_2025_14h30m
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-    wandb.init(project=project_name)
+    wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )
@@ -1110,6 +1123,8 @@ if WANDB_ENABLED:
 # Run initial MBPP evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
     print("🧪 Running initial MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("initial")
     initial_results = mbpp_evaluator.evaluate_model(
         model, tokenizer, step=0, phase="initial"
     )
@@ -1144,7 +1159,7 @@ for step in range(num_steps):
     format_violation_count = 0
 
     for game_idx in range(games_per_step):
-        trajectory = game.play_game(model, tokenizer, device)
+        trajectory = game.play_game(model, tokenizer, device, step=step)
         trajectories.append(trajectory)
 
         # 🔍 DETAILED GAME LOGGING - Show generated code and results
@@ -1348,6 +1363,8 @@ for step in range(num_steps):
         and (step + 1) % config["evaluation"]["eval_interval_steps"] == 0
     ):
         print(f"🧪 Running interval MBPP evaluation at step {step + 1}...")
+        # Seed for consistent evaluation
+        seed_manager.seed_for_evaluation_auto(f"interval_step_{step + 1}")
         interval_results = mbpp_evaluator.evaluate_model(
             model, tokenizer, step=step + 1, phase="interval"
         )
@@ -1381,6 +1398,8 @@ print("🏁 SPIRAL code game training completed!")
 # Run final MBPP evaluation if enabled
 if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.config.enabled:
     print("🧪 Running final MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("final")
     final_results = mbpp_evaluator.evaluate_model(
         model, tokenizer, step=num_steps, phase="final"
     )
