@@ -526,9 +526,25 @@ if dist_info["is_main_process"]:
 vllm_integration = None
 if config.get("vllm", {}).get("enabled", False) and dist_info["is_main_process"]:
     print("🚀 Initializing vLLM integration...")
+
+    # Resolve model path for vLLM, especially in offline mode
+    vllm_model_path = model_id
+    if offline_mode:
+        print("🔧 Offline mode: Resolving local model path for vLLM...")
+        cached_model_dirs = glob.glob(
+            os.path.join(
+                cache_dir, f"models--{model_id.replace('/', '--')}", "snapshots", "*"
+            )
+        )
+        if cached_model_dirs:
+            vllm_model_path = cached_model_dirs[0]
+            print(f"  ✓ Found local vLLM model path: {vllm_model_path}")
+        else:
+            print(f"  ⚠️ Could not find local snapshot for {model_id}. vLLM might fail.")
+
     try:
         vllm_integration = initialize_vllm_integration(
-            config["vllm"], model_id, offline_mode
+            config["vllm"], vllm_model_path, offline_mode
         )
         if vllm_integration.initialize():
             print("✅ vLLM server started successfully")
