@@ -223,7 +223,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
-from utils.seed_manager import SeedManager
 from utils.vllm_client import (
     initialize_vllm_integration,
     cleanup_vllm_integration,
@@ -244,11 +243,6 @@ if WANDB_ENABLED:  # Only try to log in if W&B is enabled
 else:
     print("🚫 Skipping W&B login (W&B is disabled by user).")
 
-# Initialize comprehensive seed management
-print("🎲 Setting up seed management...")
-seed_manager = SeedManager.from_config(config)
-seed_manager.seed_everything()
-
 # Initialize MBPP evaluator with consolidated config
 print("🧪 Setting up MBPP evaluator...")
 
@@ -260,7 +254,6 @@ eval_config_dict = config.get("evaluation", {}).copy()
 eval_config_dict.pop("enabled_initial", None)
 eval_config_dict.pop("enabled_final", None)
 eval_config_dict.pop("eval_interval_steps", None)
-eval_config_dict.pop("consistent_questions", None)
 
 # Update results directory to logs folder if running in SLURM
 log_dir = os.environ.get("GRPO_LOG_DIR", "logs")
@@ -436,69 +429,14 @@ print(model1.print_trainable_parameters())
 vllm_integration = None
 if config.get("vllm", {}).get("enabled", False):
     print("🚀 Initializing vLLM integration...")
-    
-    # Check for known problematic model architectures
-    problematic_models = ["Qwen2ForCausalLM", "Qwen2.5"]
-    should_skip_vllm = any(problem in model_id for problem in problematic_models)
-    
-    if should_skip_vllm:
-        print(f"⚠️ Model '{model_id}' may have vLLM compatibility issues. You can still try by setting FORCE_VLLM=1")
-        if not os.environ.get("FORCE_VLLM", "0") == "1":
-            print("🔄 Skipping vLLM initialization, will use HuggingFace fallback")
-            config["vllm"]["enabled"] = False
-    
-    if config.get("vllm", {}).get("enabled", False):
-        try:
-            # Determine correct model path for vLLM or HF fallback
-            vllm_model_path = model_id
-            # Check for the huggingface_hub conventional cache path
-            hf_cache_path = os.path.join(
-                cache_dir, "models--" + model_id.replace("/", "--")
-            )
-            if os.path.exists(hf_cache_path):
-                # Look for snapshots directory
-                snapshots_dir = os.path.join(hf_cache_path, "snapshots")
-                if os.path.exists(snapshots_dir):
-                    # Find the first (and typically only) snapshot directory
-                    snapshot_dirs = [
-                        d
-                        for d in os.listdir(snapshots_dir)
-                        if os.path.isdir(os.path.join(snapshots_dir, d))
-                    ]
-                    if snapshot_dirs:
-                        snapshot_path = os.path.join(snapshots_dir, snapshot_dirs[0])
-                        # Verify this snapshot has config.json
-                        if os.path.exists(os.path.join(snapshot_path, "config.json")):
-                            vllm_model_path = snapshot_path
-                            print(
-                                f"🔧 Set vLLM model path to cached snapshot: {vllm_model_path}"
-                            )
-                        else:
-                            print(
-                                f"⚠️ Snapshot directory found but no config.json: {snapshot_path}"
-                            )
-                    else:
-                        print(f"⚠️ No snapshot directories found in: {snapshots_dir}")
-                else:
-                    print(f"⚠️ No snapshots directory found in: {hf_cache_path}")
-            # Check for direct model_id path if not found in conventional cache
-            elif os.path.exists(os.path.join(cache_dir, model_id)):
-                vllm_model_path = os.path.join(cache_dir, model_id)
-                print(
-                    f"🔧 Set vLLM model path to direct cached directory: {vllm_model_path}"
-                )
-            else:
-                print(
-                    f"Model ID '{model_id}' not found in cache, vLLM will attempt to download it."
-                )
-
-            vllm_integration = initialize_vllm_integration(
-                config["vllm"], vllm_model_path, offline_mode=offline_mode
-            )
-            if vllm_integration.initialize():
-                print("✅ vLLM server started successfully")
-            else:
-                print("⚠️ vLLM server failed to start, will use HuggingFace fallback")
+    try:
+        vllm_integration = initialize_vllm_integration(
+            config["vllm"], model_id, offline_mode
+        )
+        if vllm_integration.initialize():
+            print("✅ vLLM server started successfully")
+        else:
+            print("⚠️ vLLM server failed to start, will use HuggingFace fallback")
     except Exception as e:
         print(f"⚠️ vLLM initialization failed: {e}")
         print("   Continuing with HuggingFace generation...")
@@ -723,7 +661,7 @@ if WANDB_ENABLED:
     # Create human-readable timestamp: Jul31_2025_14h30m
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
     project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-    wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
+    wandb.init(project=project_name)
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )  # Adjusted print message
@@ -733,8 +671,6 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
     is_start=True
 ):
     print("🧪 Running initial MBPP evaluation...")
-    # Seed for consistent evaluation
-    seed_manager.seed_for_evaluation_auto("initial")
     initial_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=0, phase="initial"
     )
@@ -766,15 +702,12 @@ from transformers import TrainerCallback
 
 
 class IntervalEvaluationCallback(TrainerCallback):
-    def __init__(
-        self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager
-    ):
+    def __init__(self, evaluator, model, tokenizer, config, wandb_enabled):
         self.evaluator = evaluator
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
         self.wandb_enabled = wandb_enabled
-        self.seed_manager = seed_manager
         self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
 
     def on_step_end(self, args, state, control, **kwargs):
@@ -796,10 +729,6 @@ class IntervalEvaluationCallback(TrainerCallback):
         ):
 
             print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
-            # Seed for consistent evaluation
-            self.seed_manager.seed_for_evaluation_auto(
-                f"interval_step_{state.global_step}"
-            )
             interval_results = self.evaluator.evaluate_model(
                 self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
@@ -820,7 +749,7 @@ class IntervalEvaluationCallback(TrainerCallback):
 
 # Add the callback to trainer
 interval_callback = IntervalEvaluationCallback(
-    mbpp_evaluator, model1, tokenizer1, config, WANDB_ENABLED, seed_manager
+    mbpp_evaluator, model1, tokenizer1, config, WANDB_ENABLED
 )
 trainer.add_callback(interval_callback)
 
@@ -832,8 +761,6 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.should_eva
     is_end=True
 ):
     print("🧪 Running final MBPP evaluation...")
-    # Seed for consistent evaluation
-    seed_manager.seed_for_evaluation_auto("final")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
     )
