@@ -436,49 +436,61 @@ print(model1.print_trainable_parameters())
 vllm_integration = None
 if config.get("vllm", {}).get("enabled", False):
     print("🚀 Initializing vLLM integration...")
-    try:
-        # Determine correct model path for vLLM or HF fallback
-        vllm_model_path = model_id
-        # Check for the huggingface_hub conventional cache path
-        hf_cache_path = os.path.join(
-            cache_dir, "models--" + model_id.replace("/", "--")
-        )
-        if os.path.exists(hf_cache_path):
-            # Look for snapshots directory
-            snapshots_dir = os.path.join(hf_cache_path, "snapshots")
-            if os.path.exists(snapshots_dir):
-                # Find the first (and typically only) snapshot directory
-                snapshot_dirs = [
-                    d
-                    for d in os.listdir(snapshots_dir)
-                    if os.path.isdir(os.path.join(snapshots_dir, d))
-                ]
-                if snapshot_dirs:
-                    snapshot_path = os.path.join(snapshots_dir, snapshot_dirs[0])
-                    # Verify this snapshot has config.json
-                    if os.path.exists(os.path.join(snapshot_path, "config.json")):
-                        vllm_model_path = snapshot_path
-                        print(
-                            f"🔧 Set vLLM model path to cached snapshot: {vllm_model_path}"
-                        )
+    
+    # Check for known problematic model architectures
+    problematic_models = ["Qwen2ForCausalLM", "Qwen2.5"]
+    should_skip_vllm = any(problem in model_id for problem in problematic_models)
+    
+    if should_skip_vllm:
+        print(f"⚠️ Model '{model_id}' may have vLLM compatibility issues. You can still try by setting FORCE_VLLM=1")
+        if not os.environ.get("FORCE_VLLM", "0") == "1":
+            print("🔄 Skipping vLLM initialization, will use HuggingFace fallback")
+            config["vllm"]["enabled"] = False
+    
+    if config.get("vllm", {}).get("enabled", False):
+        try:
+            # Determine correct model path for vLLM or HF fallback
+            vllm_model_path = model_id
+            # Check for the huggingface_hub conventional cache path
+            hf_cache_path = os.path.join(
+                cache_dir, "models--" + model_id.replace("/", "--")
+            )
+            if os.path.exists(hf_cache_path):
+                # Look for snapshots directory
+                snapshots_dir = os.path.join(hf_cache_path, "snapshots")
+                if os.path.exists(snapshots_dir):
+                    # Find the first (and typically only) snapshot directory
+                    snapshot_dirs = [
+                        d
+                        for d in os.listdir(snapshots_dir)
+                        if os.path.isdir(os.path.join(snapshots_dir, d))
+                    ]
+                    if snapshot_dirs:
+                        snapshot_path = os.path.join(snapshots_dir, snapshot_dirs[0])
+                        # Verify this snapshot has config.json
+                        if os.path.exists(os.path.join(snapshot_path, "config.json")):
+                            vllm_model_path = snapshot_path
+                            print(
+                                f"🔧 Set vLLM model path to cached snapshot: {vllm_model_path}"
+                            )
+                        else:
+                            print(
+                                f"⚠️ Snapshot directory found but no config.json: {snapshot_path}"
+                            )
                     else:
-                        print(
-                            f"⚠️ Snapshot directory found but no config.json: {snapshot_path}"
-                        )
+                        print(f"⚠️ No snapshot directories found in: {snapshots_dir}")
                 else:
-                    print(f"⚠️ No snapshot directories found in: {snapshots_dir}")
+                    print(f"⚠️ No snapshots directory found in: {hf_cache_path}")
+            # Check for direct model_id path if not found in conventional cache
+            elif os.path.exists(os.path.join(cache_dir, model_id)):
+                vllm_model_path = os.path.join(cache_dir, model_id)
+                print(
+                    f"🔧 Set vLLM model path to direct cached directory: {vllm_model_path}"
+                )
             else:
-                print(f"⚠️ No snapshots directory found in: {hf_cache_path}")
-        # Check for direct model_id path if not found in conventional cache
-        elif os.path.exists(os.path.join(cache_dir, model_id)):
-            vllm_model_path = os.path.join(cache_dir, model_id)
-            print(
-                f"🔧 Set vLLM model path to direct cached directory: {vllm_model_path}"
-            )
-        else:
-            print(
-                f"Model ID '{model_id}' not found in cache, vLLM will attempt to download it."
-            )
+                print(
+                    f"Model ID '{model_id}' not found in cache, vLLM will attempt to download it."
+                )
 
         vllm_integration = initialize_vllm_integration(
             config["vllm"], vllm_model_path, offline_mode=offline_mode

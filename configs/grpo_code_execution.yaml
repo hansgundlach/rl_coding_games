@@ -2,7 +2,7 @@
 
 # --- Model Settings ---
 model:
-  id: "Qwen/Qwen2.5-1.5B"  # Base model to use (will try to find 1.5B, then 3B in cache)
+  id: "Qwen/Qwen3-1.7B"  # Base model to use (will try to find 1.5B, then 3B in cache)
   cache_dir: "./model_cache"
   # local_files_only will be set by the script based on offline_mode detection
 
