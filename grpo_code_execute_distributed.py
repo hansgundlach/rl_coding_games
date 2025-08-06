@@ -786,6 +786,7 @@ if platform_info["gpu_type"] == "V100":
         max_completion_length = 256
 
         # V100-specific generation optimizations
+        # Effective batch size = 2 × world_size × 2 = 4, so num_generations must divide 4
         num_generations = (
             4  # Amortize prefill with multiple sequences (1.15-1.35× speedup)
         )
@@ -802,12 +803,15 @@ if platform_info["gpu_type"] == "V100":
         max_completion_length = 384
 
         # V100-specific generation optimizations
-        num_generations = 8  # More sequences for smaller model (1.25-1.6× speedup)
+        # Effective batch size = 4 × world_size × 1 = 4, so num_generations must divide 4
+        num_generations = (
+            4  # Changed from 8 to 4 for compatibility (still 1.15-1.35× speedup)
+        )
         if dist_info["is_main_process"]:
             print(
                 "🔧 Using V100 + 1.5B model settings (distributed, generation-optimized)"
             )
-            print("⚡ num_generations=8 for prefill amortization (1.25-1.6× speedup)")
+            print("⚡ num_generations=4 for prefill amortization (1.15-1.35× speedup)")
 else:
     # A100 or other GPUs - standard settings
     batch_size = 6
@@ -826,6 +830,7 @@ if dist_info["is_main_process"]:
     print(
         f"💡 Effective batch size: {effective_batch_size} (per_device: {batch_size} × world_size: {dist_info['world_size']} × grad_accum: {gradient_accumulation_steps})"
     )
+    print(f"🔢 num_generations={num_generations} (must divide {effective_batch_size})")
 
 # Update output directory to logs folder if running in SLURM
 output_dir = config["training_args"]["output_dir"]
