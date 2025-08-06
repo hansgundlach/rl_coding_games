@@ -210,6 +210,13 @@ if WANDB_ENABLED:  # Check if W&B is enabled by user
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_DATASETS_OFFLINE"] = "1"
         os.environ["WANDB_MODE"] = "offline"
+
+        # Set WANDB_RUN_ID before importing wandb to control offline directory name
+        timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
+        run_id = f"grpo-code-game-icl-{timestamp.replace('_', '-').replace('h', 'h-').replace('m', 'm')}"
+        os.environ["WANDB_RUN_ID"] = run_id
+        print(f"🔧 Set WANDB_RUN_ID for offline mode: {run_id}")
+
         print("✅ Set global offline mode for transformers and wandb")
     else:
         # For online mode, ensure offline flags are not set
@@ -1100,9 +1107,25 @@ print("🎮 Starting GRPO Code Game with ICL Memory Training")
 
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
+    # Create human-readable timestamp: Jul31_2025_14h30m
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
-    project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-    wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
+
+    # Use consistent project name (no timestamp) - all runs from this script go to same project
+    project_name = config["wandb"]["project_name_prefix"]
+
+    # Create readable run name with timestamp
+    run_name = f"grpo-code-game-icl-{timestamp}"
+
+    # Allow environment variable override for project name
+    if os.environ.get("WANDB_PROJECT"):
+        project_name = os.environ["WANDB_PROJECT"]
+        print(f"🔧 Using WANDB_PROJECT override: {project_name}")
+
+    wandb.init(
+        project=project_name,
+        name=run_name,
+        config={**config, **seed_manager.get_seed_info()},
+    )
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )

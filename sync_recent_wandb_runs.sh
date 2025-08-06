@@ -38,6 +38,7 @@ echo "   - Each run will be synced to its respective project"
 echo "   - Project names are determined by the training script used"
 echo "   - Run names will include timestamps for uniqueness"
 echo "   - All runs from grpo_code_execute.py will go to 'qwen-code-execution-grpo'"
+echo "   - All runs from grpo_code_game_icl.py will go to 'grpo-code-game-icl'"
 echo "   - New runs should have readable names like 'grpo-code-execute-Aug06_2025_13h41m'"
 echo
 
@@ -49,7 +50,7 @@ for run_dir in $recent_runs; do
     echo "🚀 [$count/5] Syncing: $run_name"
     
     # Check if this is a new readable format or old cryptic format
-    if [[ "$run_name" == *"grpo-code-execute-"* ]]; then
+    if [[ "$run_name" == *"grpo-code-execute-"* ]] || [[ "$run_name" == *"grpo-code-game-icl-"* ]]; then
         echo "   ✅ New readable format detected"
     else
         echo "   ⚠️ Old cryptic format detected (this should change with new runs)"

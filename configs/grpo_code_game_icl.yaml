@@ -94,7 +94,9 @@ evaluation:
 # W&B Configuration
 wandb:
   enabled: true
-  project_name_prefix: "grpo-code-game-icl"
+  project_name_prefix: "grpo-code-game-icl"  # Project name (no timestamp - all runs go to same project)
+  use_consistent_project: true  # Use same project name for all runs
+  run_name_format: "grpo-code-game-icl-{timestamp}"  # Format for run names
 
 # vLLM Configuration (optional)
 vllm:

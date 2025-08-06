@@ -68,6 +68,15 @@ export HF_DATASETS_OFFLINE=1
 export WANDB_MODE=offline
 export TOKENIZERS_PARALLELISM=false
 
+# Add W&B project override capability
+if [ -z "$WANDB_PROJECT" ]; then
+    # Set consistent project name for grpo_code_game_icl
+    export WANDB_PROJECT="grpo-code-game-icl"
+    echo "📊 Set WANDB_PROJECT to: $WANDB_PROJECT"
+else
+    echo "📊 Using WANDB_PROJECT override: $WANDB_PROJECT"
+fi
+
 # Set up logs directory with job-specific subfolder
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 JOB_LOG_DIR="logs/grpo_code_game_icl_job_${SLURM_JOB_ID}_${TIMESTAMP}"
@@ -155,6 +164,7 @@ Job Details:
 - Start Time: $(date -d @$SLURM_JOB_START_TIME 2>/dev/null || echo "Unknown")
 - End Time: $(date)
 - Exit Code: $TRAINING_EXIT_CODE
+- W&B Project: $WANDB_PROJECT
 
 Game Description:
 - Generator (Player 1): GRPO training with LoRA weight updates
