@@ -426,11 +426,6 @@ Examples of valid predictions:
 - [3.14, 2.71, 1.41]
 - [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-Think step by step about what this code does:
-1. Analyze each line of code
-2. Trace through the execution
-3. Determine the final list output
-4. Count the numbers in your predicted list (must be 2-50)
 
 Provide your prediction in this exact format:
 <prediction>
@@ -438,6 +433,12 @@ Provide your prediction in this exact format:
 </prediction>
 
 What list of numbers will this code output?"""
+
+        # Think step by step about what this code does:
+        # 1. Analyze each line of code
+        # 2. Trace through the execution
+        # 3. Determine the final list output
+        # 4. Count the numbers in your predicted list (must be 2-50)
 
         # Generate prediction
         inputs = self.tokenizer(
@@ -471,10 +472,28 @@ What list of numbers will this code output?"""
             outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
         ).strip()
 
+        # Track step counter for logging
+        if not hasattr(self, "step_counter"):
+            self.step_counter = 0
+
+        # Increment step counter and log periodically
+        self.step_counter += 1
+
         # Extract prediction
         pred_match = re.search(
             r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL
         )
+
+        # Log full response every 10 predictions (to ensure we see it at least once per GRPO step)
+        if self.step_counter % 10 == 0:
+            print(f"\n🔍 GUESSER FULL RESPONSE (Prediction #{self.step_counter}):")
+            print(f"Code: {code[:200]}{'...' if len(code) > 200 else ''}")
+            print(f"Full Response: '{response}'")
+            print(f"Response Length: {len(response)} chars")
+            print(
+                f"Extracted Prediction: '{pred_match.group(1).strip() if pred_match else 'NONE'}'"
+            )
+
         if pred_match:
             return pred_match.group(1).strip()
 
