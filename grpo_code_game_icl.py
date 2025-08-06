@@ -439,7 +439,9 @@ Provide your prediction in this exact format. THIS IS VERY IMPORTANT:
 [exact list here, e.g., [1, 2, 3, 4, 5]]
 </prediction>
 
-What list of numbers will this code output?"""
+What list of numbers will this code output?
+YOU ONLY HAVE 4 SENTENCES TO RESPOND, DO NOT THINK LONG. 
+"""
 
         # Think step by step about what this code does:
         # 1. Analyze each line of code
