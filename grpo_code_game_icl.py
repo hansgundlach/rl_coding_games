@@ -484,8 +484,12 @@ What list of numbers will this code output?"""
             r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL
         )
 
-        # Log full response every 10 predictions (to ensure we see it at least once per GRPO step)
-        if self.step_counter % 10 == 0:
+        # Log full response based on debug configuration
+        debug_config = config.get("debug", {})
+        show_full_responses = debug_config.get("show_full_responses", False)
+
+        # Log full response every 10 predictions OR if show_full_responses is enabled
+        if show_full_responses or self.step_counter % 10 == 0:
             print(f"\n🔍 GUESSER FULL RESPONSE (Prediction #{self.step_counter}):")
             print(f"Code: {code[:200]}{'...' if len(code) > 200 else ''}")
             print(f"Full Response: '{response}'")

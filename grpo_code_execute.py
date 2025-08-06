@@ -205,7 +205,14 @@ if WANDB_ENABLED:  # Check if W&B is enabled by user
     if offline_mode:
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         os.environ["HF_DATASETS_OFFLINE"] = "1"
-        os.environ["WANDB_MODE"] = "offline"  # Changed from "disabled" to "offline"
+        os.environ["WANDB_MODE"] = "offline"
+
+        # Set WANDB_RUN_ID before importing wandb to control offline directory name
+        timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
+        run_id = f"grpo-code-execute-{timestamp.replace('_', '-').replace('h', 'h-').replace('m', 'm')}"
+        os.environ["WANDB_RUN_ID"] = run_id
+        print(f"🔧 Set WANDB_RUN_ID for offline mode: {run_id}")
+
         print("✅ Set global offline mode for transformers and wandb")
     else:
         # For online mode, ensure offline flags are not set

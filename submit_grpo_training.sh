@@ -67,6 +67,15 @@ export HF_HUB_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 export WANDB_MODE=offline
 
+# Add W&B project override capability
+if [ -z "$WANDB_PROJECT" ]; then
+    # Set consistent project name for grpo_code_execute
+    export WANDB_PROJECT="qwen-code-execution-grpo"
+    echo "📊 Set WANDB_PROJECT to: $WANDB_PROJECT"
+else
+    echo "📊 Using WANDB_PROJECT override: $WANDB_PROJECT"
+fi
+
 # Set up logs directory with job-specific subfolder
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 JOB_LOG_DIR="logs/grpo_code_execute_job_${SLURM_JOB_ID}_${TIMESTAMP}"
