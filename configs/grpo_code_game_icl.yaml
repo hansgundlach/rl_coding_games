@@ -34,8 +34,8 @@ game:
 # Generation Configuration
 generation:
   generator_max_tokens: 512     # Max tokens for code generation
-  guesser_max_tokens: 512       # Max tokens for output prediction
-  guesser_temperature: 1.0      # Higher temperature handicap for guesser
+  guesser_max_tokens: 1024       # Max tokens for output prediction
+  guesser_temperature: 0.3      # Higher temperature handicap for guesser
   temperature: 0.8
   top_p: 0.9
   top_k: 50

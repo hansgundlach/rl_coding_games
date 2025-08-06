@@ -419,20 +419,22 @@ class ICLOpponent:
         # Build prompt with ICL examples
         icl_prefix = self.memory.get_icl_prompt_prefix()
 
-        prompt = f"""{icl_prefix}Code:
+        prompt = f"""{icl_prefix}<|im_start|>system
+You are a concise code analyzer. Predict the output of Python code that produces a list of 2-50 numbers. Be direct and brief - no explanations or verbose thinking needed. Just analyze the code and provide your prediction.
+<|im_end|>
+<|im_start|>user
+Code:
 ```python
 {code}
 ```
 
 IMPORTANT FORMAT REQUIREMENT:
-The code should output a list of numbers that is between 2 and 50 numbers long.
-Your prediction must also be in this format.
+The code should output a list of numbers that is between 2 and 50 numbers long in the format specified below. 
 
 Examples of valid predictions:
 - [1, 2, 3, 4, 5]
 - [3.14, 2.71, 1.41]
 - [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-
 
 Provide your prediction in this exact format. THIS IS VERY IMPORTANT:
 <prediction>
@@ -440,7 +442,8 @@ Provide your prediction in this exact format. THIS IS VERY IMPORTANT:
 </prediction>
 
 What list of numbers will this code output?
-YOU ONLY HAVE 4 SENTENCES TO RESPOND, DO NOT THINK LONG. 
+<|im_end|>
+<|im_start|>assistant
 """
 
         # Think step by step about what this code does:
