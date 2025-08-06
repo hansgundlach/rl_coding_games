@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to sync the 5 most recent offline wandb runs
-# All offline runs should be in the wandb/ folder with prefix "offline-run-"
+# Updated to work with consistent project naming
 
 echo "🔄 Finding and syncing the 5 most recent offline wandb runs..."
 echo
@@ -22,11 +22,22 @@ recent_runs=$(find . -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n
 if [ -z "$recent_runs" ]; then
     echo "❌ No offline wandb runs found in wandb/ directory"
     echo "Looking for directories with pattern: offline-run-*"
+    echo
+    echo "📁 Available directories:"
+    ls -la | grep "^d" | head -10
     exit 1
 fi
 
 echo "📋 Found the following recent offline runs:"
 echo "$recent_runs" | sed 's|^\./||' | nl -w2 -s'. '
+echo
+
+# Show project mapping info
+echo "📊 Project Mapping Information:"
+echo "   - Each run will be synced to its respective project"
+echo "   - Project names are determined by the training script used"
+echo "   - Run names will include timestamps for uniqueness"
+echo "   - All runs from grpo_code_execute.py will go to 'qwen-code-execution-grpo'"
 echo
 
 # Sync each run
@@ -35,6 +46,14 @@ for run_dir in $recent_runs; do
     count=$((count + 1))
     run_name=$(basename "$run_dir")
     echo "🚀 [$count/5] Syncing: $run_name"
+    
+    # Show what project this will sync to (if we can determine it)
+    if [ -f "$run_dir/files/config.yaml" ]; then
+        project_name=$(grep -A5 "wandb:" "$run_dir/files/config.yaml" | grep "project_name_prefix:" | head -1 | sed 's/.*project_name_prefix:[[:space:]]*//' | tr -d '"')
+        if [ ! -z "$project_name" ]; then
+            echo "   📍 Will sync to project: $project_name"
+        fi
+    fi
     
     if wandb sync "$run_name"; then
         echo "✅ Successfully synced: $run_name"
@@ -45,3 +64,9 @@ for run_dir in $recent_runs; do
 done
 
 echo "🎉 Finished syncing offline wandb runs!"
+echo
+echo "💡 Tips:"
+echo "   - All runs from grpo_code_execute.py will sync to 'qwen-code-execution-grpo'"
+echo "   - Each run will have a unique timestamp-based name like 'grpo-code-execute-Jul31_2025_14h30m'"
+echo "   - You can view all runs in the same project on wandb.ai"
+echo "   - Multiple training runs will appear as separate runs in the same project"

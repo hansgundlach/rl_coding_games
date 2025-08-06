@@ -223,12 +223,18 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
+from utils.seed_manager import SeedManager
 from utils.vllm_client import (
     initialize_vllm_integration,
     cleanup_vllm_integration,
     get_vllm_integration,
 )
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
+
+# Initialize comprehensive seed management
+print("🎲 Setting up seed management...")
+seed_manager = SeedManager.from_config(config)
+seed_manager.seed_everything()
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
 if WANDB_ENABLED:  # Only try to log in if W&B is enabled
@@ -660,11 +666,26 @@ print("Starting GRPO training for code execution...")
 if WANDB_ENABLED:
     # Create human-readable timestamp: Jul31_2025_14h30m
     timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
-    project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-    wandb.init(project=project_name)
+
+    # Use consistent project name (no timestamp) - all runs from this script go to same project
+    project_name = config["wandb"]["project_name_prefix"]
+
+    # Create readable run name with timestamp
+    run_name = f"grpo-code-execute-{timestamp}"
+
+    # Allow environment variable override for project name
+    if os.environ.get("WANDB_PROJECT"):
+        project_name = os.environ["WANDB_PROJECT"]
+        print(f"🔧 Using WANDB_PROJECT override: {project_name}")
+
+    wandb.init(
+        project=project_name,
+        name=run_name,
+        config={**config, **seed_manager.get_seed_info()},
+    )
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
-    )  # Adjusted print message
+    )
 
 # Run initial evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_evaluate(

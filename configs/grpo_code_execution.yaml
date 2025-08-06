@@ -48,7 +48,9 @@ training_args:
 # --- Weights & Biases Logging Settings ---
 wandb:
   enabled: True                 # Set to False to completely disable W&B logging
-  project_name_prefix: "qwen-code-execution-grpo" # Project name will be: prefix-timestamp
+  project_name_prefix: "qwen-code-execution-grpo" # Project name (no timestamp - all runs go to same project)
+  use_consistent_project: True  # Use same project name for all runs
+  run_name_format: "grpo-code-execute-{timestamp}"  # Format for run names
 
 # --- Evaluation Settings (MBPP) ---
 evaluation:
