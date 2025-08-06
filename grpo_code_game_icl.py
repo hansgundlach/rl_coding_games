@@ -921,7 +921,7 @@ generator_model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
     cache_dir=cache_dir,
     local_files_only=offline_mode,
-    load_in_8bit=False,  # 8-bit quantization
+    load_in_8bit=True,  # 8-bit quantization
 )
 generator_tokenizer = AutoTokenizer.from_pretrained(
     generator_model_id, cache_dir=cache_dir, local_files_only=offline_mode
