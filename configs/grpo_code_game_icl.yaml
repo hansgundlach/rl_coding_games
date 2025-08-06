@@ -6,11 +6,11 @@ seed: 42  # Global seed for all random number generators
 
 # Model Configuration
 generator_model:
-  id: "Qwen/Qwen3-4B"  # Trainable generator model
+  id: "Qwen/Qwen3-1.7B"  # Trainable generator model
   cache_dir: "./model_cache"
 
 guesser_model:
-  id: "Qwen/Qwen3-1.7B"  # Frozen guesser model (same family)
+  id: "Qwen/Qwen3-4B"  # Frozen guesser model (same family)
   cache_dir: "./model_cache"
 
 # LoRA Configuration for Generator

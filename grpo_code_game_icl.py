@@ -434,7 +434,7 @@ Examples of valid predictions:
 - [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
 
-Provide your prediction in this exact format:
+Provide your prediction in this exact format. THIS IS VERY IMPORTANT:
 <prediction>
 [exact list here, e.g., [1, 2, 3, 4, 5]]
 </prediction>
@@ -497,9 +497,9 @@ What list of numbers will this code output?"""
 
         # Log full response every 10 predictions OR if show_full_responses is enabled
         if show_full_responses or self.step_counter % 10 == 0:
-            print(f"\n🔍 GUESSER FULL RESPONSE (Prediction #{self.step_counter}):")
-            print(f"Code: {code[:200]}{'...' if len(code) > 200 else ''}")
-            print(f"Full Response: '{response}'")
+            print(f"\n🔍 ICL GUESSER FULL RESPONSE (Prediction #{self.step_counter}):")
+            print(f"Code Input: {code[:200]}{'...' if len(code) > 200 else ''}")
+            print(f"ICL Guesser Full Response: '{response}'")
             print(f"Response Length: {len(response)} chars")
             print(
                 f"Extracted Prediction: '{pred_match.group(1).strip() if pred_match else 'NONE'}'"
@@ -1317,7 +1317,7 @@ def icl_enhanced_reward_function(completions, **kwargs):
             game_detail = game_details.get(i, {})
 
             if show_full_responses:
-                print(f"📝 Full Response:")
+                print(f"📝 RL GENERATOR FULL RESPONSE:")
                 print(f"```\n{completion}\n```")
 
             # Use stored details if available, otherwise extract
@@ -1332,14 +1332,14 @@ def icl_enhanced_reward_function(completions, **kwargs):
             execution_error = game_detail.get("execution_error", "")
             game_rewards_detail = game_detail.get("game_rewards", {})
 
-            print(f"🤖 Generated Code ({len(code)} chars):")
+            print(f"🤖 RL GENERATOR Generated Code ({len(code)} chars):")
             display_code = code[:max_code_chars] + (
                 "..." if len(code) > max_code_chars else ""
             )
             print(f"```python\n{display_code}\n```")
 
-            print(f"🎯 Generator Prediction: '{generator_prediction}'")
-            print(f"🤔 Guesser Prediction: '{guesser_prediction}'")
+            print(f"🎯 RL GENERATOR Prediction: '{generator_prediction}'")
+            print(f"🤔 ICL GUESSER Prediction: '{guesser_prediction}'")
 
             if show_execution_details and code:
                 print(f"🔧 Execution Results:")
@@ -1414,10 +1414,18 @@ def icl_enhanced_reward_function(completions, **kwargs):
         detail = game_details.get(i, {})
         actual = detail.get("actual_output", "")[:50]  # Truncate long outputs
         guesser_pred = detail.get("guesser_prediction", "")[:50]
+        generator_pred = detail.get("generator_prediction", "")[:50]
         success = detail.get("execution_success", False)
 
         if success:
-            match = (
+            generator_match = (
+                "✅"
+                if detail.get("game_rewards", {}).get(
+                    "generator_prediction_correct", False
+                )
+                else "❌"
+            )
+            guesser_match = (
                 "✅"
                 if detail.get("game_rewards", {}).get(
                     "guesser_prediction_correct", False
@@ -1425,11 +1433,11 @@ def icl_enhanced_reward_function(completions, **kwargs):
                 else "❌"
             )
             print(
-                f"   Game {i+1}: Actual='{actual}' | Guesser='{guesser_pred}' {match}"
+                f"   Game {i+1}: Actual='{actual}' | RL Generator='{generator_pred}' {generator_match} | ICL Guesser='{guesser_pred}' {guesser_match}"
             )
         else:
             print(
-                f"   Game {i+1}: Code failed to execute | Guesser='{guesser_pred}' ❌"
+                f"   Game {i+1}: Code failed to execute | RL Generator='{generator_pred}' ❌ | ICL Guesser='{guesser_pred}' ❌"
             )
     if len(completions) > 5:
         print(f"   ... and {len(completions) - 5} more games")
