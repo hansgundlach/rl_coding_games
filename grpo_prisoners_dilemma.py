@@ -2,13 +2,13 @@
 """
 GRPO Iterated Prisoner's Dilemma Training
 
-GRPO-based self-play training where an LLM competes by submitting code strategies 
+GRPO-based self-play training where an LLM competes by submitting code strategies
 for the iterated prisoner's dilemma. The model plays against a frozen copy of itself
 that gets refreshed every N updates.
 
 Key Features:
 - Single LLM (e.g., Qwen3-1.7B + LoRA) with self-play
-- LLMs submit code strategies, not direct actions  
+- LLMs submit code strategies, not direct actions
 - Reward based on tournament wins/losses
 - -1 reward for code execution failures
 - WSLS bot opponents interspersed for robustness
@@ -19,13 +19,14 @@ Key Features:
 
 # Set environment variable to avoid tokenizers warning
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from trl import GRPOConfig, GRPOTrainer
+from trl import GRPOConfig, GRPOTrainer  # type: ignore
 import re
 import wandb
 import sys
@@ -60,6 +61,7 @@ args, unknown_args = parser.parse_known_args()
 print(f"📝 Loading configuration from: {args.config}")
 with open(args.config, "r") as f:
     config = yaml.safe_load(f)
+
 
 # Apply config overrides from command line
 def apply_config_overrides(config, override_args):
@@ -124,11 +126,13 @@ def apply_config_overrides(config, override_args):
 
     return config
 
+
 # Apply any config overrides
 config = apply_config_overrides(config, unknown_args)
 
 # Extract config values for easy access
 WANDB_ENABLED = config["wandb"]["enabled"]
+
 
 def detect_platform_and_gpu():
     """Auto-detect platform and GPU capabilities for environment-specific settings."""
@@ -191,6 +195,7 @@ def detect_platform_and_gpu():
         "platform": platform,
         "offline_reason": offline_reason,
     }
+
 
 # Auto-detect platform and capabilities
 print("🔧 Running platform detection...")
@@ -303,29 +308,32 @@ print(f"   WSLS bot enabled: {config['game']['wsls_bot_enabled']}")
 if config["game"]["wsls_bot_enabled"]:
     print(f"   WSLS bot probability: {config['game']['wsls_bot_prob']}")
 
+
 @dataclass
 class PrisonersReward:
     """Reward data for a prisoner's dilemma game."""
+
     game_id: int
     player1_reward: float
     player2_reward: float
     game_data: Dict[str, Any]
+
 
 def generate_strategy_pair(
     main_model, opponent_model, tokenizer, device, game_env, step: int, game_idx: int
 ) -> Tuple[PlayerSubmission, PlayerSubmission]:
     """Generate strategy code for both players using main model vs opponent."""
     player_submissions = []
-    
+
     # Player 1: Main model (being trained)
     # Player 2: Opponent model (frozen copy or WSLS bot)
-    
+
     models = [main_model, opponent_model]
-    
+
     for player_id in [0, 1]:
         # Get prompt for this player
         prompt = game_env.get_player_prompt(player_id, "player")
-        
+
         # Generate response with the appropriate model
         inputs = tokenizer(
             prompt, return_tensors="pt", truncation=True, max_length=1024
@@ -335,13 +343,13 @@ def generate_strategy_pair(
 
         generation_kwargs = {
             "max_new_tokens": config["generation"]["max_new_tokens"],
-            "temperature": config["generation"]["temperature"], 
+            "temperature": config["generation"]["temperature"],
             "top_p": config["generation"]["top_p"],
             "do_sample": config["generation"]["do_sample"],
             "pad_token_id": tokenizer.eos_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
-        
+
         # Only add top_k if it's specified and positive
         if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
             generation_kwargs["top_k"] = config["generation"]["top_k"]
@@ -357,24 +365,27 @@ def generate_strategy_pair(
 
         player_submissions.append(
             PlayerSubmission(
-                player_id=player_id, 
-                role="player", 
-                prompt=prompt, 
+                player_id=player_id,
+                role="player",
+                prompt=prompt,
                 response=generated_text,
                 extracted_code=generated_text,
-                compilation_success=True
+                compilation_success=True,
             )
         )
 
     return player_submissions[0], player_submissions[1]
 
-def simulate_single_game(strategy_pair_with_env) -> 'GameTrajectory':
+
+def simulate_single_game(strategy_pair_with_env) -> "GameTrajectory":
     """Simulate a single game with given strategies (CPU-bound, can be parallelized)."""
-    player1_submission, player2_submission, game_env_copy, game_id = strategy_pair_with_env
-    
+    player1_submission, player2_submission, game_env_copy, game_id = (
+        strategy_pair_with_env
+    )
+
     # Play the game
     game_result = game_env_copy.play_game([player1_submission, player2_submission])
-    
+
     return GameTrajectory(
         game_id=game_id,
         player1_submission=player1_submission,
@@ -382,13 +393,16 @@ def simulate_single_game(strategy_pair_with_env) -> 'GameTrajectory':
         game_result=game_result,
     )
 
-@dataclass 
+
+@dataclass
 class GameTrajectory:
     """Complete trajectory for a single game."""
+
     game_id: int
     player1_submission: PlayerSubmission
     player2_submission: PlayerSubmission
     game_result: Any  # GameResult from game environment
+
 
 # Set up model cache directory
 cache_dir = config["model"]["cache_dir"]
@@ -413,7 +427,9 @@ tokenizer = AutoTokenizer.from_pretrained(
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-print(f"✅ Loaded main model with {sum(p.numel() for p in main_model.parameters()):,} parameters")
+print(
+    f"✅ Loaded main model with {sum(p.numel() for p in main_model.parameters()):,} parameters"
+)
 
 # Add LoRA for efficient training
 print("🔧 Setting up LoRA configuration...")
@@ -436,61 +452,75 @@ opponent_model.eval()
 
 print("✅ Created frozen opponent model")
 
-# Initialize GRPO trainer 
+# Initialize GRPO trainer
 print("🏗️ Setting up GRPO trainer...")
+
+
+# Maintain module-level state for the reward function (avoids adding attributes to the function itself)
+@dataclass
+class RewardFunctionState:
+    call_count: int = 0
+    last_game_stats: Optional[Dict[str, Any]] = None
+
+
+reward_state = RewardFunctionState()
+
 
 # GRPO reward function
 def prisoners_dilemma_reward_function(completions, **kwargs):
     """
     GRPO reward function that plays prisoner's dilemma games between main model and opponent.
-    
+
     Args:
         completions: List of generated completions from main model (player 1)
         **kwargs: Additional arguments from GRPO trainer
-        
+
     Returns:
         List of reward values for each completion
     """
     # Refresh opponent model every N steps
-    if not hasattr(prisoners_dilemma_reward_function, 'call_count'):
-        prisoners_dilemma_reward_function.call_count = 0
-    
-    prisoners_dilemma_reward_function.call_count += 1
-    
+    global opponent_model
+    reward_state.call_count += 1
+
     # Check if we need to refresh opponent (every opponent_refresh_steps calls)
-    if (prisoners_dilemma_reward_function.call_count > 1 and 
-        prisoners_dilemma_reward_function.call_count % opponent_refresh_steps == 0):
-        print(f"🔄 Refreshing opponent model (call {prisoners_dilemma_reward_function.call_count})...")
-        global opponent_model
+    if (
+        reward_state.call_count > 1
+        and reward_state.call_count % opponent_refresh_steps == 0
+    ):
+        print(f"🔄 Refreshing opponent model (call {reward_state.call_count})...")
         opponent_model = copy.deepcopy(main_model)
         for param in opponent_model.parameters():
             param.requires_grad = False
         opponent_model.eval()
         print("✅ Opponent model refreshed with latest weights")
-    
-    print(f"🎮 Playing {len(completions)} prisoner's dilemma games for reward calculation...")
-    
+
+    print(
+        f"🎮 Playing {len(completions)} prisoner's dilemma games for reward calculation..."
+    )
+
     rewards = []
     game_stats = {
         "player1_wins": 0,
-        "player2_wins": 0, 
+        "player2_wins": 0,
         "ties": 0,
         "execution_failures": 0,
         "successful_games": 0,
         "wsls_bot_games": 0,
         "games_with_noise": 0,
     }
-    
+
     # Generate opponent strategies for each game
     opponent_completions = []
     for i in range(len(completions)):
         # Generate opponent strategy with frozen model
         prompt = game_env.get_player_prompt(1, "player")  # Player 2 prompt
-        
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+
+        inputs = tokenizer(
+            prompt, return_tensors="pt", truncation=True, max_length=1024
+        )
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
-            
+
         generation_kwargs = {
             "max_new_tokens": config["generation"]["max_new_tokens"],
             "temperature": config["generation"]["temperature"],
@@ -499,62 +529,67 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             "pad_token_id": tokenizer.eos_token_id,
             "eos_token_id": tokenizer.eos_token_id,
         }
-        
+
         # Only add top_k if it's specified and positive
         if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
             generation_kwargs["top_k"] = config["generation"]["top_k"]
-            
+
         with torch.no_grad():
             outputs = opponent_model.generate(**inputs, **generation_kwargs)
-        
+
         opponent_text = tokenizer.decode(
             outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
         ).strip()
         opponent_completions.append(opponent_text)
-    
+
     # Play games in parallel
     strategy_pairs = []
-    for i, (main_completion, opp_completion) in enumerate(zip(completions, opponent_completions)):
+    for i, (main_completion, opp_completion) in enumerate(
+        zip(completions, opponent_completions)
+    ):
         player1_sub = PlayerSubmission(
-            player_id=0, 
-            role="player", 
-            prompt="strategy", 
+            player_id=0,
+            role="player",
+            prompt="strategy",
             response=main_completion,
             extracted_code=main_completion,
-            compilation_success=True
+            compilation_success=True,
         )
         player2_sub = PlayerSubmission(
-            player_id=1, 
-            role="player", 
-            prompt="strategy", 
+            player_id=1,
+            role="player",
+            prompt="strategy",
             response=opp_completion,
             extracted_code=opp_completion,
-            compilation_success=True
+            compilation_success=True,
         )
         # Create a fresh copy of game_env for each game to avoid threading issues
         game_env_copy = copy.deepcopy(game_env)
         strategy_pairs.append((player1_sub, player2_sub, game_env_copy, i))
-    
+
     # Simulate games (potentially in parallel)
     parallel_games = config["training"].get("parallel_games", True)
     num_workers = config["training"].get("num_workers", None)
-    
+
     if parallel_games and len(strategy_pairs) > 1:
         max_workers = num_workers or (os.cpu_count() or 1)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             trajectories = list(executor.map(simulate_single_game, strategy_pairs))
     else:
         trajectories = [simulate_single_game(pair) for pair in strategy_pairs]
-    
+
     # Calculate rewards
     for trajectory in trajectories:
-        if trajectory.game_result.success:
+        # Check if game was successful based on successful_submissions
+        game_successful = trajectory.game_result.successful_submissions > 0
+
+        if game_successful:
             game_stats["successful_games"] += 1
-            
+
             # Extract player rewards
-            p1_reward = trajectory.game_result.player_rewards[0]
-            p2_reward = trajectory.game_result.player_rewards[1]
-            
+            p1_reward = trajectory.game_result.player_rewards.get(0, 0)
+            p2_reward = trajectory.game_result.player_rewards.get(1, 0)
+
             # Determine winner and assign GRPO reward
             if p1_reward > p2_reward:
                 reward = 1.0  # Main model wins
@@ -565,40 +600,42 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             else:
                 reward = 0.0  # Tie
                 game_stats["ties"] += 1
-            
+
             # Track special game features
             game_data = trajectory.game_result.game_data
             if game_data.get("wsls_bot_used", False):
                 game_stats["wsls_bot_games"] += 1
             if game_data.get("noise_rounds", 0) > 0:
                 game_stats["games_with_noise"] += 1
-                
+
         else:
             # Code execution failure - negative reward
             reward = -1.0
             game_stats["execution_failures"] += 1
-            
+
         rewards.append(reward)
-    
+
     # Store stats for logging
-    prisoners_dilemma_reward_function.last_game_stats = game_stats
-    
+    reward_state.last_game_stats = game_stats
+
     # Show some debug info
     debug_config = config.get("debug", {})
     show_detailed_games = debug_config.get("show_detailed_games", 0)
-    
+
     if show_detailed_games > 0:
-        print(f"🎯 Showing details for first {min(show_detailed_games, len(trajectories))} games:")
+        print(
+            f"🎯 Showing details for first {min(show_detailed_games, len(trajectories))} games:"
+        )
         for i in range(min(show_detailed_games, len(trajectories))):
             trajectory = trajectories[i]
             reward = rewards[i]
             print(f"\n🎮 Game {i+1}: Reward = {reward:+.1f}")
-            
-            if trajectory.game_result.success:
+
+            if trajectory.game_result.successful_submissions > 0:
                 p1_reward = trajectory.game_result.player_rewards[0]
                 p2_reward = trajectory.game_result.player_rewards[1]
                 print(f"   Player scores: P1={p1_reward}, P2={p2_reward}")
-                
+
                 game_data = trajectory.game_result.game_data
                 features = []
                 if game_data.get("wsls_bot_used", False):
@@ -608,12 +645,17 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
                 if features:
                     print(f"   Features: {', '.join(features)}")
             else:
-                print(f"   ❌ Game failed: {trajectory.game_result.error}")
-    
-    print(f"🏆 Game results: {game_stats['player1_wins']} wins, {game_stats['player2_wins']} losses, {game_stats['ties']} ties")
-    print(f"💥 Execution failures: {game_stats['execution_failures']}/{len(completions)}")
-    
+                print(f"   ❌ Game failed: execution issues")
+
+    print(
+        f"🏆 Game results: {game_stats['player1_wins']} wins, {game_stats['player2_wins']} losses, {game_stats['ties']} ties"
+    )
+    print(
+        f"💥 Execution failures: {game_stats['execution_failures']}/{len(completions)}"
+    )
+
     return rewards
+
 
 # Adaptive settings based on GPU
 training_args = config["grpo_config"]
@@ -638,7 +680,8 @@ if offline_mode:
         )
     )
     if cached_model_dirs:
-        main_model.config._name_or_path = cached_model_dirs[0]
+        # Point config to local snapshot; ignore typing since field is internal/private
+        main_model.config._name_or_path = cached_model_dirs[0]  # type: ignore[attr-defined, assignment]
         print(f"🔧 Set model config path for offline mode: {cached_model_dirs[0]}")
     else:
         print("⚠️ Warning: Could not find cached model directory for offline mode")
@@ -690,7 +733,8 @@ if WANDB_ENABLED:
         wandb.init(
             project=project_name, config={**config, **seed_manager.get_seed_info()}
         )
-        print(f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name})")
+        run_name = getattr(wandb.run, "name", None)
+        print(f"✅ Initialized W&B run: {run_name} (Project: {project_name})")
     else:
         # Offline mode: Use consistent project name without timestamp
         project_name = config["wandb"]["project_name_prefix"]
@@ -699,9 +743,8 @@ if WANDB_ENABLED:
             config={**config, **seed_manager.get_seed_info()},
             mode="offline",
         )
-        print(
-            f"✅ Initialized W&B run (offline): {wandb.run.name} (Project: {project_name})"
-        )
+        run_name = getattr(wandb.run, "name", None)
+        print(f"✅ Initialized W&B run (offline): {run_name} (Project: {project_name})")
 
 # Run initial MBPP evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
@@ -726,6 +769,7 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
 # Add interval evaluation callback
 from transformers import TrainerCallback
 
+
 class IntervalEvaluationCallback(TrainerCallback):
     def __init__(
         self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager
@@ -749,7 +793,9 @@ class IntervalEvaluationCallback(TrainerCallback):
         ):
             print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
             # Seed for consistent evaluation
-            self.seed_manager.seed_for_evaluation_auto(f"interval_step_{state.global_step}")
+            self.seed_manager.seed_for_evaluation_auto(
+                f"interval_step_{state.global_step}"
+            )
             interval_results = self.evaluator.evaluate_model(
                 self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
@@ -758,12 +804,15 @@ class IntervalEvaluationCallback(TrainerCallback):
                 wandb.log(
                     {
                         "mbpp_eval/pass_rate": interval_results["pass_rate"],
-                        "mbpp_eval/problems_passed": interval_results["problems_passed"],
+                        "mbpp_eval/problems_passed": interval_results[
+                            "problems_passed"
+                        ],
                         "mbpp_eval/total_problems": interval_results["total_problems"],
                         "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
                         "step": state.global_step,
                     }
                 )
+
 
 # Add the callback to trainer
 interval_callback = IntervalEvaluationCallback(
@@ -792,7 +841,7 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.config.ena
     final_results = mbpp_evaluator.evaluate_model(
         main_model, tokenizer, step=num_steps, phase="final"
     )
-    
+
     if WANDB_ENABLED and wandb.run and "pass_rate" in final_results:
         wandb.log(
             {
