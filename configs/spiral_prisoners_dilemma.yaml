@@ -37,7 +37,7 @@ game:
 
 # Generation parameters
 generation:
-  max_new_tokens: 512              # Maximum response length for strategy code
+  max_new_tokens: 1024              # Maximum response length for strategy code
   temperature: 1.0                  # Sampling temperature
   top_p: 1.0                        # Top P sampling (1.0 = disabled)
   top_k: -1                         # Top K sampling (-1 = disabled)
@@ -45,7 +45,7 @@ generation:
 
 # Training parameters
 training:
-  num_steps: 200
+  num_steps: 300
   learning_rate: 0.00002
   rae_alpha: 0.95                   # Role-conditioned advantage estimation decay rate
   gradient_clip_norm: 1.0
