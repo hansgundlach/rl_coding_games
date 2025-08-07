@@ -333,18 +333,22 @@ def generate_strategy_pair(
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
+        generation_kwargs = {
+            "max_new_tokens": config["generation"]["max_new_tokens"],
+            "temperature": config["generation"]["temperature"], 
+            "top_p": config["generation"]["top_p"],
+            "do_sample": config["generation"]["do_sample"],
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+        }
+        
+        # Only add top_k if it's specified and positive
+        if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
+            generation_kwargs["top_k"] = config["generation"]["top_k"]
+
         model = models[player_id]
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=config["generation"]["max_new_tokens"],
-                temperature=config["generation"]["temperature"],
-                top_p=config["generation"]["top_p"],
-                top_k=config["generation"]["top_k"],
-                do_sample=config["generation"]["do_sample"],
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+            outputs = model.generate(**inputs, **generation_kwargs)
 
         # Decode the generated response
         generated_text = tokenizer.decode(
@@ -480,17 +484,21 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         if device.type == "cuda":
             inputs = {k: v.to(device) for k, v in inputs.items()}
             
+        generation_kwargs = {
+            "max_new_tokens": config["generation"]["max_new_tokens"],
+            "temperature": config["generation"]["temperature"],
+            "top_p": config["generation"]["top_p"],
+            "do_sample": config["generation"]["do_sample"],
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+        }
+        
+        # Only add top_k if it's specified and positive
+        if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
+            generation_kwargs["top_k"] = config["generation"]["top_k"]
+            
         with torch.no_grad():
-            outputs = opponent_model.generate(
-                **inputs,
-                max_new_tokens=config["generation"]["max_new_tokens"],
-                temperature=config["generation"]["temperature"],
-                top_p=config["generation"]["top_p"],
-                top_k=config["generation"]["top_k"],
-                do_sample=config["generation"]["do_sample"],
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+            outputs = opponent_model.generate(**inputs, **generation_kwargs)
         
         opponent_text = tokenizer.decode(
             outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
