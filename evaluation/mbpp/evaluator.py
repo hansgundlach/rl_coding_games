@@ -39,6 +39,7 @@ class EvalConfig:
     eval_at_start: bool = True
     eval_at_end: bool = True
     eval_interval_steps: Optional[int] = None  # If None, only eval at start/end
+    consistent_questions: bool = True  # Use same questions for all interval evaluations
 
     # Dataset configuration
     dataset_path: Optional[str] = None  # Path to local MBPP dataset
@@ -170,9 +171,16 @@ class MBPPEvaluator:
         if not self.problems:
             return []
 
-        # Randomly sample problems for this evaluation
         num_to_sample = min(self.config.num_questions, len(self.problems))
-        return random.sample(self.problems, num_to_sample)
+        
+        # Check if we should use consistent questions across evaluations
+        if hasattr(self.config, 'consistent_questions') and self.config.consistent_questions:
+            # Use deterministic selection - sort by task_id and take first N
+            sorted_problems = sorted(self.problems, key=lambda p: p.get('task_id', 0))
+            return sorted_problems[:num_to_sample]
+        else:
+            # Use random sampling (original behavior)
+            return random.sample(self.problems, num_to_sample)
 
     def create_prompt(self, problem: Dict) -> str:
         """Create evaluation prompt from MBPP problem."""

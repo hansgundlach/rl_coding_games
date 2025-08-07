@@ -84,8 +84,8 @@ evaluation:
   enabled_interval: true
   eval_interval_steps: 10
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
-  num_questions: 20
-  temperature: 0.2
+  num_questions: 30
+  temperature: 0.0
   max_new_tokens: 512
   timeout_seconds: 10
   results_dir: "./eval_results"
