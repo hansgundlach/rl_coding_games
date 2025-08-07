@@ -420,7 +420,7 @@ class ICLOpponent:
         icl_prefix = self.memory.get_icl_prompt_prefix()
 
         prompt = f"""{icl_prefix}<|im_start|>system
-You are a concise code analyzer. Predict the output of Python code that produces a list of 2-50 numbers. Be direct and brief - no explanations or verbose thinking needed. Just analyze the code and provide your prediction.
+You are a concise code analyzer. Predict the output of Python code that produces a list of 2-50 numbers. Be direct and brief - NO THINKING, NO EXPLANATIONS, NO VERBOSE REASONING. Just analyze the code and provide your prediction immediately. Do not use <think> tags or explain your reasoning.
 <|im_end|>
 <|im_start|>user
 Code:
@@ -719,12 +719,7 @@ The program should be executable and produce a list output in the required forma
 
 Focus on writing clean, working code that produces an interesting or non-obvious list that you can predict but Player 2 cannot.
 
-Examples of good strategies:
-- Mathematical sequences (Fibonacci, primes, factorials)
-- Calculations with specific numeric results
-- List comprehensions with non-obvious patterns
-- String-to-number conversions
-- Date/time calculations that produce numbers
+
 
 Format your response with the Python code AND your prediction:
 ```python
@@ -737,6 +732,13 @@ print([...])  # Your list here
 </prediction>
 
 Write a Python program that outputs a list of numbers and predict its output:"""
+
+    # Examples of good strategies:
+    # - Mathematical sequences (Fibonacci, primes, factorials)
+    # - Calculations with specific numeric results
+    # - List comprehensions with non-obvious patterns
+    # - String-to-number conversions
+    # - Date/time calculations that produce numbers
 
     inputs = tokenizer(
         generator_prompt, return_tensors="pt", truncation=True, max_length=512
