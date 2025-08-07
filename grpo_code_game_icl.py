@@ -704,7 +704,7 @@ def play_code_game(
     # Player 1: Generate code AND predict output
     generator_prompt = """You are Player 1 in a code generation game. Your goals are to:
 1. Write Python code that executes successfully without errors
-2. Correctly predict what your code will output
+2. CORRECTLY PREDICT what your code will output
 3. Write code whose output Player 2 will struggle to predict correctly
 
 IMPORTANT FORMAT REQUIREMENT:
@@ -721,14 +721,14 @@ Focus on writing clean, working code that produces an interesting or non-obvious
 
 
 
-Format your response with the Python code AND your prediction:
+Format your response with the Python code AND your prediction usin the python code block:
 ```python
-# Your code here - must print a list of 2-50 numbers
-print([...])  # Your list here
 ```
 
+Your prediction should be in the following format between prediction tags. This is very important. 
+If you're predction is wrong, you will be penalized. 
 <prediction>
-[exact list your code will produce, e.g., [1, 2, 3, 4, 5]]
+
 </prediction>
 
 Write a Python program that outputs a list of numbers and predict its output:"""
@@ -1158,6 +1158,9 @@ def icl_enhanced_reward_function(completions, **kwargs):
     ICL-enhanced reward function that plays games between generator and ICL guesser.
     This is called by GRPO for each batch of completions.
     """
+    import time
+    step_start_time = time.time()
+    
     print(f"🎮 Playing {len(completions)} games for reward calculation...")
 
     rewards = []
@@ -1167,7 +1170,20 @@ def icl_enhanced_reward_function(completions, **kwargs):
     # Store guesser predictions for debug output
     guesser_predictions = {}
     game_details = {}
+    
+    # Timing breakdown
+    timing_stats = {
+        "total_games_time": 0.0,
+        "code_execution_time": 0.0,
+        "icl_prediction_time": 0.0,
+        "reward_calculation_time": 0.0,
+        "memory_update_time": 0.0,
+        "grpo_inference_time": 0.0,  # Time for GRPO to generate completions
+        "grpo_weight_update_time": 0.0,  # Time for GRPO weight updates
+    }
 
+    games_start_time = time.time()
+    
     for i, completion in enumerate(completions):
         try:
             # Extract code and prediction from completion
@@ -1189,22 +1205,29 @@ def icl_enhanced_reward_function(completions, **kwargs):
                 continue
 
             # Execute the code
+            code_exec_start = time.time()
             execution_result = safe_execute_code(code, config["game"]["timeout"])
+            timing_stats["code_execution_time"] += time.time() - code_exec_start
+            
             actual_output = (
                 execution_result["output"] if execution_result["success"] else ""
             )
 
             # Sample ICL opponent (80/20 mix)
+            icl_start = time.time()
             opponent = sample_opponent(
                 generator_model, guesser_model, guesser_tokenizer, device, latest_memory
             )
             guesser_prediction = opponent.predict_output(code)
+            timing_stats["icl_prediction_time"] += time.time() - icl_start
             guesser_predictions[i] = guesser_prediction
 
             # Calculate rewards
+            reward_start = time.time()
             game_rewards = calculate_rewards(
                 execution_result, prediction, guesser_prediction, actual_output
             )
+            timing_stats["reward_calculation_time"] += time.time() - reward_start
             reward = game_rewards["generator"]
             rewards.append(reward)
 
@@ -1265,6 +1288,7 @@ def icl_enhanced_reward_function(completions, **kwargs):
     icl_enhanced_reward_function.games_played += len(completions)
 
     # Batch ICL memory updates
+    memory_start = time.time()
     if (
         hasattr(icl_enhanced_reward_function, "pending_wins")
         and icl_enhanced_reward_function.pending_wins
@@ -1282,6 +1306,7 @@ def icl_enhanced_reward_function(completions, **kwargs):
         print(
             f"📸 Saved memory snapshot ({len(snapshot_buf)}/{SNAPSHOT_MAX} snapshots)"
         )
+    timing_stats["memory_update_time"] = time.time() - memory_start
 
         # Show current ICL memory state
         print(f"🧠 Current ICL memory contains {len(latest_memory.examples)} examples:")
@@ -1404,10 +1429,52 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
         print(f"{'='*80}")
 
+    # Calculate total timing
+    timing_stats["total_games_time"] = time.time() - games_start_time
+    total_step_time = time.time() - step_start_time
+    
     avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
     print(
         f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {avg_reward:.2f}"
     )
+    
+    # Get complete GRPO timing from callback if available
+    grpo_generation_time = 0.0
+    grpo_reward_time = 0.0
+    grpo_weight_update_time = 0.0
+    grpo_complete_step_time = 0.0
+    
+    if hasattr(grpo_timing_callback, 'step_timings'):
+        current_step = getattr(icl_enhanced_reward_function, 'games_played', 0)
+        if current_step in grpo_timing_callback.step_timings:
+            step_data = grpo_timing_callback.step_timings[current_step]
+            grpo_generation_time = step_data.get('generation_time', 0.0)
+            grpo_reward_time = step_data.get('reward_computation_time', 0.0)
+            grpo_weight_update_time = step_data.get('weight_update_time', 0.0)
+            grpo_complete_step_time = step_data.get('complete_step_time', 0.0)
+    
+    # Calculate actual training time (this reward function execution is part of the training step)
+    actual_training_time = total_step_time  # This reward computation IS the training time
+    actual_weight_update_time = grpo_complete_step_time - total_step_time if grpo_complete_step_time > 0 else 0.0
+    
+    # Print detailed timing breakdown
+    print(f"⏱️ DETAILED TIMING BREAKDOWN (step {getattr(icl_enhanced_reward_function, 'games_played', 0)}):")
+    print(f"   Reward computation time: {total_step_time:.3f}s")
+    print(f"   Games execution: {timing_stats['total_games_time']:.3f}s ({timing_stats['total_games_time']/total_step_time*100:.1f}%)")
+    print(f"   Code execution: {timing_stats['code_execution_time']:.3f}s ({timing_stats['code_execution_time']/total_step_time*100:.1f}%)")
+    print(f"   ICL predictions: {timing_stats['icl_prediction_time']:.3f}s ({timing_stats['icl_prediction_time']/total_step_time*100:.1f}%)")
+    print(f"   Reward calculation: {timing_stats['reward_calculation_time']:.3f}s ({timing_stats['reward_calculation_time']/total_step_time*100:.1f}%)")
+    print(f"   Memory updates: {timing_stats['memory_update_time']:.3f}s ({timing_stats['memory_update_time']/total_step_time*100:.1f}%)")
+    print(f"   Per game avg: {timing_stats['total_games_time']/len(completions):.3f}s")
+    
+    # Print complete GRPO step breakdown if available
+    if grpo_complete_step_time > 0:
+        print(f"\n🏋️ COMPLETE GRPO STEP BREAKDOWN:")
+        print(f"   Total GRPO step: {grpo_complete_step_time:.3f}s")
+        print(f"   Generation phase: {grpo_generation_time:.3f}s ({grpo_generation_time/grpo_complete_step_time*100:.1f}%)")
+        print(f"   Training time (reward computation): {actual_training_time:.3f}s ({actual_training_time/grpo_complete_step_time*100:.1f}%)")
+        print(f"   Weight update: {actual_weight_update_time:.3f}s ({actual_weight_update_time/grpo_complete_step_time*100:.1f}%)")
+        print(f"   Training efficiency: {actual_training_time/grpo_complete_step_time*100:.1f}% of time spent in actual training")
 
     # Always show a quick summary of guesser predictions vs actual outputs
     print(f"\n📊 Quick Game Summary:")
@@ -1453,6 +1520,19 @@ def icl_enhanced_reward_function(completions, **kwargs):
                 "training/icl_memory_size": len(latest_memory.examples),
                 "training/kl_beta": config["training_args"].get("kl_beta", None),
                 "step": getattr(icl_enhanced_reward_function, "games_played", 0),
+                # Timing metrics
+                "timing/reward_computation_time": total_step_time,
+                "timing/games_execution_time": timing_stats["total_games_time"],
+                "timing/code_execution_time": timing_stats["code_execution_time"],
+                "timing/icl_prediction_time": timing_stats["icl_prediction_time"],
+                "timing/reward_calculation_time": timing_stats["reward_calculation_time"],
+                "timing/memory_update_time": timing_stats["memory_update_time"],
+                "timing/per_game_avg_time": timing_stats["total_games_time"]/len(completions) if completions else 0,
+                # Complete GRPO step timing
+                "timing/grpo_complete_step_time": grpo_complete_step_time,
+                "timing/grpo_generation_time": grpo_generation_time,
+                "timing/grpo_training_time": actual_training_time,
+                "timing/grpo_weight_update_time": actual_weight_update_time,
             }
         )
 
@@ -1460,15 +1540,76 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
 
 # Replace the simple reward function with the ICL-enhanced one
+print("🏋️ Initializing GRPO trainer...")
+trainer_start = time.time()
 grpo_trainer = GRPOTrainer(
     model=generator_model,
     reward_funcs=[icl_enhanced_reward_function],  # Use ICL-enhanced reward function
     args=grpo_config,
     train_dataset=dataset,
 )
+trainer_init_time = time.time() - trainer_start
+print(f"⏱️ GRPO trainer initialization: {trainer_init_time:.3f}s")
 
 # Add interval evaluation callback
 from transformers import TrainerCallback
+
+
+class GRPOTimingCallback(TrainerCallback):
+    """Callback to track complete GRPO training timing."""
+    
+    def __init__(self):
+        self.step_timings = {}
+        self.generation_start = None
+        self.reward_start = None
+        self.weight_update_start = None
+        self.complete_step_start = None
+    
+    def on_step_begin(self, args, state, control, **kwargs):
+        """Called at the beginning of each training step - GRPO generation phase."""
+        import time
+        self.complete_step_start = time.time()
+        self.generation_start = time.time()
+        print(f"🔄 GRPO Step {state.global_step}: Starting generation phase...")
+    
+    def on_compute_loss(self, args, state, control, **kwargs):
+        """Called after generation, before reward computation."""
+        import time
+        if self.generation_start:
+            generation_time = time.time() - self.generation_start
+            self.reward_start = time.time()
+            print(f"⏱️ GRPO generation phase: {generation_time:.3f}s")
+            print(f"🎮 Starting reward computation (games) phase...")
+    
+    def on_step_end(self, args, state, control, **kwargs):
+        """Called at the end of each training step - after weight updates."""
+        import time
+        if self.complete_step_start:
+            complete_step_time = time.time() - self.complete_step_start
+            
+            # Calculate phases
+            generation_time = 0.0
+            reward_time = 0.0
+            weight_update_time = 0.0
+            
+            if self.generation_start and self.reward_start:
+                generation_time = self.reward_start - self.generation_start
+                reward_time = complete_step_time - self.reward_start
+                # Weight update time is roughly the remaining time after reward computation
+                weight_update_time = complete_step_time - generation_time - reward_time
+            
+            self.step_timings[state.global_step] = {
+                "generation_time": generation_time,
+                "reward_computation_time": reward_time,
+                "weight_update_time": weight_update_time,
+                "complete_step_time": complete_step_time
+            }
+            
+            print(f"⏱️ GRPO Step {state.global_step} Complete:")
+            print(f"   Generation: {generation_time:.3f}s ({generation_time/complete_step_time*100:.1f}%)")
+            print(f"   Reward computation: {reward_time:.3f}s ({reward_time/complete_step_time*100:.1f}%)")
+            print(f"   Weight update: {weight_update_time:.3f}s ({weight_update_time/complete_step_time*100:.1f}%)")
+            print(f"   Total GRPO step: {complete_step_time:.3f}s")
 
 
 class IntervalEvaluationCallback(TrainerCallback):
@@ -1524,7 +1665,7 @@ class IntervalEvaluationCallback(TrainerCallback):
                 )
 
 
-# Add the callback to trainer
+# Add the callbacks to trainer
 interval_callback = IntervalEvaluationCallback(
     mbpp_evaluator,
     generator_model,
@@ -1533,13 +1674,19 @@ interval_callback = IntervalEvaluationCallback(
     WANDB_ENABLED,
     seed_manager,
 )
+grpo_timing_callback = GRPOTimingCallback()
 grpo_trainer.add_callback(interval_callback)
+grpo_trainer.add_callback(grpo_timing_callback)
 
 print("🎮 Starting GRPO Code Game with ICL Memory Training")
 
 # Run GRPO training - this will automatically call our ICL-enhanced reward function
 print("🏋️ Starting GRPO training with ICL-enhanced rewards...")
+training_start = time.time()
 grpo_trainer.train()
+total_training_time = time.time() - training_start
+print(f"⏱️ Total training time: {total_training_time:.3f}s")
+print(f"⏱️ Average time per step: {total_training_time/config['training']['num_steps']:.3f}s")
 
 print("🏁 GRPO Code Game with ICL Memory training completed!")
 
