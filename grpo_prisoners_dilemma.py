@@ -373,17 +373,19 @@ print(f"📥 Loading model: {model_id}")
 print(f"💾 Cache directory: {cache_dir}")
 
 # Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
+tokenizer = AutoTokenizer.from_pretrained(
+    model_id, cache_dir=cache_dir, local_files_only=offline_mode
+)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # Load main model
 main_model = AutoModelForCausalLM.from_pretrained(
     model_id,
-    cache_dir=cache_dir,
-    torch_dtype=torch.bfloat16 if platform_info["supports_bf16"] else torch.float16,
+    torch_dtype="auto",
     device_map="auto",
-    trust_remote_code=True,
+    cache_dir=cache_dir,
+    local_files_only=offline_mode,
 )
 
 print(f"✅ Loaded main model with {sum(p.numel() for p in main_model.parameters()):,} parameters")
