@@ -356,7 +356,14 @@ def generate_strategy_pair(
         ).strip()
 
         player_submissions.append(
-            PlayerSubmission(player_id=player_id, code=generated_text)
+            PlayerSubmission(
+                player_id=player_id, 
+                role="player", 
+                prompt=prompt, 
+                response=generated_text,
+                extracted_code=generated_text,
+                compilation_success=True
+            )
         )
 
     return player_submissions[0], player_submissions[1]
@@ -508,8 +515,22 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     # Play games in parallel
     strategy_pairs = []
     for i, (main_completion, opp_completion) in enumerate(zip(completions, opponent_completions)):
-        player1_sub = PlayerSubmission(player_id=0, code=main_completion)
-        player2_sub = PlayerSubmission(player_id=1, code=opp_completion)
+        player1_sub = PlayerSubmission(
+            player_id=0, 
+            role="player", 
+            prompt="strategy", 
+            response=main_completion,
+            extracted_code=main_completion,
+            compilation_success=True
+        )
+        player2_sub = PlayerSubmission(
+            player_id=1, 
+            role="player", 
+            prompt="strategy", 
+            response=opp_completion,
+            extracted_code=opp_completion,
+            compilation_success=True
+        )
         # Create a fresh copy of game_env for each game to avoid threading issues
         game_env_copy = copy.deepcopy(game_env)
         strategy_pairs.append((player1_sub, player2_sub, game_env_copy, i))
