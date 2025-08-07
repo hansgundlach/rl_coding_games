@@ -259,7 +259,10 @@ seed_manager.seed_everything()
 # Initialize MBPP evaluator with consolidated config
 print("🧪 Setting up MBPP evaluator...")
 
-# Create evaluation config from main config
+# Import the configuration helper
+from evaluation.configs.loader import get_platform_specific_config
+
+# Create evaluation config from main config - RESPECT CONFIG FILE VALUES
 eval_config_dict = config.get("evaluation", {}).copy()
 
 # Remove keys not expected by EvalConfig constructor
@@ -267,9 +270,14 @@ eval_config_dict.pop("enabled_initial", None)
 eval_config_dict.pop("enabled_final", None)
 eval_config_dict.pop("enabled_interval", None)
 eval_config_dict.pop("eval_interval_steps", None)
-# Keep consistent_questions for EvalConfig (it now supports this field)
 
-# Create EvalConfig object from consolidated config
+# Only add platform-specific adjustments for missing values (don't override config file)
+platform_config = get_platform_specific_config()
+for key, value in platform_config.items():
+    if key not in eval_config_dict or eval_config_dict[key] is None:
+        eval_config_dict[key] = value
+
+# Create EvalConfig object from config file values
 eval_config = EvalConfig(**eval_config_dict)
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
@@ -614,17 +622,17 @@ if WANDB_ENABLED:
         # Online mode: Create timestamped project name like grpo_code_game
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-        wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
-        print(
-            f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name})"
+        wandb.init(
+            project=project_name, config={**config, **seed_manager.get_seed_info()}
         )
+        print(f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name})")
     else:
         # Offline mode: Use consistent project name without timestamp
-        project_name = config['wandb']['project_name_prefix']
+        project_name = config["wandb"]["project_name_prefix"]
         wandb.init(
             project=project_name,
             config={**config, **seed_manager.get_seed_info()},
-            mode="offline"
+            mode="offline",
         )
         print(
             f"✅ Initialized W&B run (offline): {wandb.run.name} (Project: {project_name})"
