@@ -1,9 +1,21 @@
 #!/bin/bash
 
-# Script to sync the 5 most recent offline wandb runs
+# Script to sync the N most recent offline wandb runs
 # Updated to work with consistent project naming
 
-echo "🔄 Finding and syncing the 5 most recent offline wandb runs..."
+# Default to 5 runs if no parameter provided
+N_RUNS=${1:-5}
+
+# Validate input
+if ! [[ "$N_RUNS" =~ ^[0-9]+$ ]] || [ "$N_RUNS" -lt 1 ]; then
+    echo "❌ Error: Please provide a positive number of runs to sync"
+    echo "Usage: $0 [number_of_runs]"
+    echo "Example: $0 10    # Sync the 10 most recent runs"
+    echo "Example: $0        # Sync the 5 most recent runs (default)"
+    exit 1
+fi
+
+echo "🔄 Finding and syncing the $N_RUNS most recent offline wandb runs..."
 echo
 
 # Check if wandb directory exists
@@ -15,8 +27,8 @@ fi
 # Change to wandb directory
 cd wandb
 
-# Find all offline-run directories, sort by modification time (newest first) and take the first 5
-recent_runs=$(find . -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n' | sort -rn | head -5 | cut -d' ' -f2-)
+# Find all offline-run directories, sort by modification time (newest first) and take the first N
+recent_runs=$(find . -maxdepth 1 -type d -name "offline-run-*" -printf '%T@ %p\n' | sort -rn | head -$N_RUNS | cut -d' ' -f2-)
 
 # Check if any runs were found
 if [ -z "$recent_runs" ]; then
@@ -47,7 +59,7 @@ count=0
 for run_dir in $recent_runs; do
     count=$((count + 1))
     run_name=$(basename "$run_dir")
-    echo "🚀 [$count/5] Syncing: $run_name"
+    echo "🚀 [$count/$N_RUNS] Syncing: $run_name"
     
     # Check if this is a new readable format or old cryptic format
     if [[ "$run_name" == *"grpo-code-execute-"* ]] || [[ "$run_name" == *"grpo-code-game-icl-"* ]]; then
@@ -72,10 +84,14 @@ for run_dir in $recent_runs; do
     echo
 done
 
-echo "🎉 Finished syncing offline wandb runs!"
+echo "🎉 Finished syncing $N_RUNS offline wandb runs!"
 echo
 echo "💡 Tips:"
 echo "   - All runs from grpo_code_execute.py will sync to 'qwen-code-execution-grpo'"
 echo "   - Each run will have a unique timestamp-based name like 'grpo-code-execute-Jul31_2025_14h30m'"
 echo "   - You can view all runs in the same project on wandb.ai"
 echo "   - Multiple training runs will appear as separate runs in the same project"
+echo
+echo "📝 Usage: $0 [number_of_runs]"
+echo "   Example: $0 10    # Sync the 10 most recent runs"
+echo "   Example: $0        # Sync the 5 most recent runs (default)"
