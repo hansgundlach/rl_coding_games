@@ -72,6 +72,7 @@ evaluation:
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_prisoners_dilemma"
   temperature: 0.0
+  do_sample: false            # Required when temperature=0.0 for greedy decoding
   max_new_tokens: 512
   timeout_seconds: 10
 
