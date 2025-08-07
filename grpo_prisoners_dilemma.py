@@ -193,6 +193,7 @@ def detect_platform_and_gpu():
     }
 
 # Auto-detect platform and capabilities
+print("🔧 Running platform detection...")
 platform_info = detect_platform_and_gpu()
 print(f"🔍 Auto-detected: {platform_info['platform']} platform")
 print(
@@ -206,12 +207,28 @@ print(
 offline_mode = platform_info["offline_mode"]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Set global environment variables for transformers library
-if offline_mode:
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    os.environ["HF_DATASETS_OFFLINE"] = "1"
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    print("🌐 Set offline mode environment variables")
+# Set global environment variables for transformers library and W&B
+if WANDB_ENABLED:  # Check if W&B is enabled by user
+    if offline_mode:
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        os.environ["HF_DATASETS_OFFLINE"] = "1"
+        os.environ["WANDB_MODE"] = "offline"
+
+        # Set WANDB_RUN_ID before importing wandb to control offline directory name
+        timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
+        run_id = f"grpo-prisoners-dilemma-{timestamp.replace('_', '-').replace('h', 'h-').replace('m', 'm')}"
+        os.environ["WANDB_RUN_ID"] = run_id
+        print(f"🔧 Set WANDB_RUN_ID for offline mode: {run_id}")
+
+        print("✅ Set global offline mode for transformers and wandb")
+    else:
+        # For online mode, ensure offline flags are not set
+        os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        os.environ.pop("HF_DATASETS_OFFLINE", None)
+        os.environ.pop("WANDB_MODE", None)
+else:  # If WANDB_ENABLED is False, explicitly disable W&B
+    os.environ["WANDB_MODE"] = "disabled"
+    print("🚫 W&B logging explicitly disabled by user configuration.")
 
 # Add project path to sys.path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -362,24 +379,14 @@ class GameTrajectory:
     player2_submission: PlayerSubmission
     game_result: Any  # GameResult from game environment
 
-# Load and setup models
-print("🤖 Loading and setting up models...")
-
-# Model configuration
-model_id = config["model"]["id"]
+# Set up model cache directory
 cache_dir = config["model"]["cache_dir"]
+os.makedirs(cache_dir, exist_ok=True)
 
-print(f"📥 Loading model: {model_id}")
-print(f"💾 Cache directory: {cache_dir}")
+# Use exactly the model specified in config
+model_id = config["model"]["id"]
+print(f"📥 Using model from config: {model_id}")
 
-# Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained(
-    model_id, cache_dir=cache_dir, local_files_only=offline_mode
-)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-
-# Load main model
 main_model = AutoModelForCausalLM.from_pretrained(
     model_id,
     torch_dtype="auto",
@@ -387,11 +394,25 @@ main_model = AutoModelForCausalLM.from_pretrained(
     cache_dir=cache_dir,
     local_files_only=offline_mode,
 )
+tokenizer = AutoTokenizer.from_pretrained(
+    model_id, cache_dir=cache_dir, local_files_only=offline_mode
+)
+
+# Ensure tokenizer has pad token
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
 print(f"✅ Loaded main model with {sum(p.numel() for p in main_model.parameters()):,} parameters")
 
-# Apply LoRA to main model
-lora_config = LoraConfig(**config["lora"])
+# Add LoRA for efficient training
+print("🔧 Setting up LoRA configuration...")
+lora_config = LoraConfig(
+    task_type=config["lora"]["task_type"],
+    r=config["lora"]["r"],
+    lora_alpha=config["lora"]["lora_alpha"],
+    target_modules=config["lora"]["target_modules"],
+)
+
 main_model = get_peft_model(main_model, lora_config)
 main_model.print_trainable_parameters()
 
@@ -419,6 +440,23 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     Returns:
         List of reward values for each completion
     """
+    # Refresh opponent model every N steps
+    if not hasattr(prisoners_dilemma_reward_function, 'call_count'):
+        prisoners_dilemma_reward_function.call_count = 0
+    
+    prisoners_dilemma_reward_function.call_count += 1
+    
+    # Check if we need to refresh opponent (every opponent_refresh_steps calls)
+    if (prisoners_dilemma_reward_function.call_count > 1 and 
+        prisoners_dilemma_reward_function.call_count % opponent_refresh_steps == 0):
+        print(f"🔄 Refreshing opponent model (call {prisoners_dilemma_reward_function.call_count})...")
+        global opponent_model
+        opponent_model = copy.deepcopy(main_model)
+        for param in opponent_model.parameters():
+            param.requires_grad = False
+        opponent_model.eval()
+        print("✅ Opponent model refreshed with latest weights")
+    
     print(f"🎮 Playing {len(completions)} prisoner's dilemma games for reward calculation...")
     
     rewards = []
@@ -548,8 +586,36 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     
     return rewards
 
+# Adaptive settings based on GPU
+training_args = config["grpo_config"]
+if platform_info["gpu_type"] == "V100":
+    training_args["per_device_train_batch_size"] = min(
+        training_args["per_device_train_batch_size"], 2
+    )
+    training_args["gradient_accumulation_steps"] = max(
+        training_args.get("gradient_accumulation_steps", 1), 4
+    )
+    print("🔧 Adjusted training args for V100 memory constraints")
+
+# Fix model config path for GRPOTrainer if in offline mode
+if offline_mode:
+    # Point the model config to actual cached snapshot directory so GRPOTrainer can find tokenizer files locally
+    cached_model_dirs = glob.glob(
+        os.path.join(
+            cache_dir,
+            f"models--{model_id.replace('/', '--')}",
+            "snapshots",
+            "*",
+        )
+    )
+    if cached_model_dirs:
+        main_model.config._name_or_path = cached_model_dirs[0]
+        print(f"🔧 Set model config path for offline mode: {cached_model_dirs[0]}")
+    else:
+        print("⚠️ Warning: Could not find cached model directory for offline mode")
+
 # Create GRPO config
-grpo_config = GRPOConfig(**config["grpo_config"])
+grpo_config = GRPOConfig(**training_args)
 
 # Create dataset for GRPO (prompts for player 1)
 print("📚 Creating training dataset...")
@@ -628,75 +694,64 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
             }
         )
 
-print("\n🏋️ Starting GRPO training loop...")
+# Add interval evaluation callback
+from transformers import TrainerCallback
 
-# Training loop
-for step in range(num_steps):
-    print(f"\n🎯 Step {step + 1}/{num_steps}")
-    
-    # Refresh opponent model every N steps
-    if step > 0 and step % opponent_refresh_steps == 0:
-        print(f"🔄 Refreshing opponent model (step {step + 1})...")
-        opponent_model = copy.deepcopy(main_model)
-        for param in opponent_model.parameters():
-            param.requires_grad = False
-        opponent_model.eval()
-        print("✅ Opponent model refreshed with latest weights")
-    
-    # Run one step of GRPO training
-    print("🏋️ Running GRPO training step...")
-    grpo_trainer.train()
-    
-    # Log training metrics
-    if WANDB_ENABLED and wandb.run:
-        # Get last game stats from reward function
-        if hasattr(prisoners_dilemma_reward_function, 'last_game_stats'):
-            stats = prisoners_dilemma_reward_function.last_game_stats
-            
-            wandb.log({
-                "training/step": step + 1,
-                "training/player1_wins": stats["player1_wins"],
-                "training/player2_wins": stats["player2_wins"],
-                "training/ties": stats["ties"],
-                "training/win_rate": stats["player1_wins"] / max(1, stats["successful_games"]),
-                "training/execution_failures": stats["execution_failures"],
-                "training/success_rate": stats["successful_games"] / max(1, len(dataset)),
-                "training/wsls_bot_games": stats["wsls_bot_games"],
-                "training/games_with_noise": stats["games_with_noise"],
-            })
-    
-    # Run interval MBPP evaluation if enabled
-    if (
-        config["evaluation"].get("enabled_interval", False) 
-        and mbpp_evaluator.config.enabled
-        and config["evaluation"].get("eval_interval_steps", 10) > 0
-        and (step + 1) % config["evaluation"]["eval_interval_steps"] == 0
+class IntervalEvaluationCallback(TrainerCallback):
+    def __init__(
+        self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager
     ):
-        print(f"🧪 Running interval MBPP evaluation at step {step + 1}...")
-        # Seed for consistent evaluation
-        seed_manager.seed_for_evaluation_auto(f"interval_step_{step + 1}")
-        interval_results = mbpp_evaluator.evaluate_model(
-            main_model, tokenizer, step=step + 1, phase="interval"
-        )
-        
-        if WANDB_ENABLED and wandb.run and "pass_rate" in interval_results:
-            wandb.log(
-                {
-                    "mbpp_eval/pass_rate": interval_results["pass_rate"],
-                    "mbpp_eval/problems_passed": interval_results["problems_passed"],
-                    "mbpp_eval/total_problems": interval_results["total_problems"],
-                    "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
-                    "step": step + 1,
-                }
+        self.evaluator = evaluator
+        self.model = model
+        self.tokenizer = tokenizer
+        self.config = config
+        self.wandb_enabled = wandb_enabled
+        self.seed_manager = seed_manager
+        self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        # Run interval evaluation if configured
+        if (
+            self.config["evaluation"].get("enabled_interval", False)
+            and self.evaluator.config.enabled
+            and self.eval_interval
+            and state.global_step > 0
+            and state.global_step % self.eval_interval == 0
+        ):
+            print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
+            # Seed for consistent evaluation
+            self.seed_manager.seed_for_evaluation_auto(f"interval_step_{state.global_step}")
+            interval_results = self.evaluator.evaluate_model(
+                self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
-    
-    # Save checkpoint
-    if (step + 1) % config["training"]["save_interval"] == 0:
-        checkpoint_dir = f"{config['training']['checkpoint_dir']}/step_{step + 1}"
-        print(f"💾 Saving checkpoint at step {step + 1}...")
-        main_model.save_pretrained(checkpoint_dir)
-        tokenizer.save_pretrained(checkpoint_dir)
-        print(f"✅ Checkpoint saved to {checkpoint_dir}")
+
+            if self.wandb_enabled and wandb.run and "pass_rate" in interval_results:
+                wandb.log(
+                    {
+                        "mbpp_eval/pass_rate": interval_results["pass_rate"],
+                        "mbpp_eval/problems_passed": interval_results["problems_passed"],
+                        "mbpp_eval/total_problems": interval_results["total_problems"],
+                        "mbpp_eval/eval_time": interval_results["eval_time_seconds"],
+                        "step": state.global_step,
+                    }
+                )
+
+# Add the callback to trainer
+interval_callback = IntervalEvaluationCallback(
+    mbpp_evaluator,
+    main_model,
+    tokenizer,
+    config,
+    WANDB_ENABLED,
+    seed_manager,
+)
+grpo_trainer.add_callback(interval_callback)
+
+print("🎮 Starting GRPO Prisoner's Dilemma Training")
+
+# Run GRPO training - this will automatically call our reward function
+print("🏋️ Starting GRPO training with prisoner's dilemma rewards...")
+grpo_trainer.train()
 
 print("\n🏁 GRPO Prisoner's Dilemma training completed!")
 
