@@ -1,0 +1,127 @@
+# GRPO Iterated Prisoner's Dilemma Configuration
+# Self-play training where an LLM competes against frozen copies of itself
+
+# Model configuration
+model:
+  id: "Qwen/Qwen3-1.7B"
+  cache_dir: "./model_cache"
+
+# Random seed configuration for reproducible experiments
+seed: 42  # Global seed for all random number generators
+
+# LoRA configuration for efficient training
+lora:
+  task_type: "CAUSAL_LM"
+  r: 16
+  lora_alpha: 32
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+# Game-specific settings
+game:
+  timeout: 3  # Code execution timeout in seconds per strategy call
+  num_rounds: 20  # Number of rounds in each prisoner's dilemma game
+  payoff_matrix:
+    # Payoff matrix: (my_action, opponent_action): (my_payoff, opponent_payoff)
+    cooperate_cooperate: [3, 3]
+    cooperate_defect: [0, 5]
+    defect_cooperate: [5, 0]
+    defect_defect: [1, 1]
+  
+  # Noise settings - small chance to flip actions
+  noise_enabled: true           # Enable action noise
+  noise_prob: 0.05             # 5% probability of flipping each action (0.03-0.08 recommended)
+  
+  # WSLS (Win-Stay/Lose-Shift) bot settings
+  wsls_bot_enabled: true       # Enable WSLS bot as occasional opponent
+  wsls_bot_prob: 0.2           # 20% chance of facing WSLS bot instead of frozen copy
+
+# Generation parameters
+generation:
+  max_new_tokens: 512              # Maximum response length for strategy code
+  temperature: 1.0                  # Sampling temperature
+  top_p: 1.0                        # Top P sampling (1.0 = disabled)
+  top_k: -1                         # Top K sampling (-1 = disabled)
+  do_sample: true                   # Enable sampling
+
+# GRPO Training Configuration
+grpo_config:
+  learning_rate: 0.00002
+  beta: 0.05                        # KL penalty coefficient
+  per_device_train_batch_size: 4    # Reduced for memory efficiency
+  gradient_accumulation_steps: 2
+  max_prompt_length: 512
+  max_completion_length: 512
+  num_generations: 2                # GRPO requirement: generate multiple completions
+  optim: "adamw_torch"
+  num_train_epochs: 1
+  gradient_checkpointing: false     # Disable for V100 compatibility
+  dataloader_pin_memory: true
+  remove_unused_columns: false
+  logging_steps: 1
+  max_steps: 90                     # Will be overridden by training.num_steps
+  
+  # GRPO-specific hyperparameters
+  epsilon: 0.2                      # Trust-region lower-bound (PPO-style clipping)
+  num_iterations: 1                 # Number of optimization mini-steps per batch
+  
+  output_dir: "./outputs/grpo_prisoners_dilemma"
+
+# Training parameters
+training:
+  num_steps: 90                     # Total training steps
+  opponent_refresh_steps: 10        # Refresh frozen opponent every N steps
+  games_per_step_v100: 2            # Conservative for V100 memory constraints
+  games_per_step_other: 4           # Standard for A100+ GPUs
+  save_interval: 20                 # Save checkpoint every N steps
+  checkpoint_dir: "checkpoints/grpo_prisoners_dilemma"
+  
+  # Parallel execution settings
+  parallel_games: true              # Enable parallel game simulation
+  num_workers: null                 # Number of worker threads (null = auto-detect CPU cores)
+
+# Dataset Configuration (for GRPO trainer)
+dataset:
+  size: 100                         # Number of prompts in training dataset
+
+# Evaluation configuration
+evaluation:
+  enabled: true
+  enabled_initial: true       # Run evaluation before training
+  enabled_final: true         # Run evaluation after training  
+  enabled_interval: true      # Run evaluation during training
+  eval_interval_steps: 10     # Run evaluation every N steps
+  consistent_questions: true  # Use same questions for all interval evaluations (default: true)
+  
+  # MBPP evaluation settings (for general coding ability)
+  num_questions: 20            # Reduced for faster evaluation during training
+  dataset_path: null          # Auto-detect MBPP dataset location
+  results_dir: "./eval_results/grpo_prisoners_dilemma"
+  temperature: 0.0
+  do_sample: false            # Required when temperature=0.0 for greedy decoding
+  max_new_tokens: 512
+  timeout_seconds: 10
+
+# Debug Configuration
+debug:
+  show_detailed_games: 2            # Number of games per step to show detailed results
+  max_code_chars: 500               # Maximum characters of code to display
+  show_full_responses: false        # Show full model responses (can be very long)
+  show_execution_details: true      # Show code execution results and errors
+
+# Weights & Biases configuration  
+wandb:
+  enabled: true
+  project_name_prefix: "grpo-prisoners-dilemma"  # Project name (no timestamp - all runs go to same project)
+  use_consistent_project: true  # Use same project name for all runs
+  run_name_format: "grpo-prisoners-dilemma-{timestamp}"  # Format for run names
+
+# vLLM configuration (optional, for faster inference)
+vllm:
+  enabled: false              # Disabled by default
+  gpu_memory_utilization: 0.85
+  max_model_len: 2048
+  trust_remote_code: false
+  
+  integration:
+    use_for_grpo_completions: false
+    log_performance_comparison: false
