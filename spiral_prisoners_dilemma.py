@@ -234,11 +234,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.seed_manager import SeedManager
-from evaluation import (
-    MBPPEvaluator,
-    create_eval_config_for_training,
-    print_config_summary,
-)
+from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 from game_environments.prisoners_dilemma import IteratedPrisonersDilemma
 from game_environments.base_game import PlayerSubmission
 
@@ -260,40 +256,22 @@ print("🎲 Setting up seed management...")
 seed_manager = SeedManager.from_config(config)
 seed_manager.seed_everything()
 
-# Initialize MBPP evaluator with configuration from YAML
+# Initialize MBPP evaluator with consolidated config
 print("🧪 Setting up MBPP evaluator...")
 
-# Create evaluation config from main config (use the loaded YAML config)
+# Create evaluation config from main config
 eval_config_dict = config.get("evaluation", {}).copy()
 
 # Remove keys not expected by EvalConfig constructor
 eval_config_dict.pop("enabled_initial", None)
-eval_config_dict.pop("enabled_final", None) 
+eval_config_dict.pop("enabled_final", None)
 eval_config_dict.pop("enabled_interval", None)
 eval_config_dict.pop("eval_interval_steps", None)
 # Keep consistent_questions for EvalConfig (it now supports this field)
 
-# Apply platform-specific adjustments
-platform_info = detect_platform_and_gpu()
-if platform_info["platform"] == "Supercloud":
-    # V100 conservative settings
-    eval_config_dict["num_questions"] = min(eval_config_dict.get("num_questions", 30), 10)
-    eval_config_dict["timeout_seconds"] = 5
-    eval_config_dict["max_new_tokens"] = 256
-    print("🔧 Applied V100 evaluation adjustments")
+# Create EvalConfig object from consolidated config
+eval_config = EvalConfig(**eval_config_dict)
 
-# Create EvalConfig object from loaded config
-try:
-    from evaluation.mbpp.evaluator import EvalConfig
-    eval_config = EvalConfig(**eval_config_dict)
-    print("✅ Evaluation config loaded from spiral_prisoners_dilemma.yaml")
-except TypeError as e:
-    print(f"⚠️ Config error: {e}")
-    # Fallback to create_eval_config_for_training
-    eval_config = create_eval_config_for_training("spiral_prisoners_dilemma") 
-    print("⚠️ Using fallback evaluation config")
-
-print_config_summary(eval_config)
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
 if not mbpp_evaluator.config.enabled:
