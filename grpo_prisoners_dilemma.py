@@ -225,9 +225,9 @@ from game_environments.base_game import PlayerSubmission
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
 if WANDB_ENABLED:  # Only try to log in if W&B is enabled
-    wandb_api_key = get_api_key("WANDB_API_KEY")
-    if wandb_api_key and not offline_mode:
-        wandb.login(key=wandb_api_key)
+    wandb_key = get_api_key("wandb", required=False)
+    if wandb_key:
+        wandb.login(key=wandb_key)
         print("✓ Logged into W&B using environment variable")
     else:
         print("⚠️ No W&B API key found, continuing without logging")
