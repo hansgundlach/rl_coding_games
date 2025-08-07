@@ -68,10 +68,10 @@ evaluation:
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   
   # MBPP evaluation settings (for general coding ability)
-  num_questions: 20            # Reduced for faster evaluation during training
+  num_questions: 30            # Reduced for faster evaluation during training
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_prisoners_dilemma"
-  temperature: 0.2
+  temperature: 0.0
   max_new_tokens: 512
   timeout_seconds: 10
 
@@ -85,7 +85,9 @@ debug:
 # Weights & Biases configuration  
 wandb:
   enabled: true
-  project_name_prefix: "spiral-prisoners-dilemma"
+  project_name_prefix: "spiral-prisoners-dilemma"  # Project name (no timestamp - all runs go to same project)
+  use_consistent_project: true  # Use same project name for all runs
+  run_name_format: "spiral-prisoners-dilemma-{timestamp}"  # Format for run names
 
 # vLLM configuration (optional, for faster inference)
 vllm:

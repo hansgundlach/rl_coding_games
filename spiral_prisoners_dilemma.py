@@ -267,7 +267,7 @@ eval_config_dict.pop("enabled_initial", None)
 eval_config_dict.pop("enabled_final", None)
 eval_config_dict.pop("enabled_interval", None)
 eval_config_dict.pop("eval_interval_steps", None)
-eval_config_dict.pop("consistent_questions", None)
+# Keep consistent_questions for EvalConfig (it now supports this field)
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
@@ -637,13 +637,25 @@ print(
 
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
-    # Create human-readable timestamp: Jul31_2025_14h30m
-    timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
-    project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
-    wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
-    print(
-        f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
-    )
+    if not offline_mode:
+        # Online mode: Create timestamped project name like grpo_code_game
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        project_name = f"{config['wandb']['project_name_prefix']}-{timestamp}"
+        wandb.init(project=project_name, config={**config, **seed_manager.get_seed_info()})
+        print(
+            f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name})"
+        )
+    else:
+        # Offline mode: Use consistent project name without timestamp
+        project_name = config['wandb']['project_name_prefix']
+        wandb.init(
+            project=project_name,
+            config={**config, **seed_manager.get_seed_info()},
+            mode="offline"
+        )
+        print(
+            f"✅ Initialized W&B run (offline): {wandb.run.name} (Project: {project_name})"
+        )
 
 # Run initial MBPP evaluation if enabled
 if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
