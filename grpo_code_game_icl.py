@@ -894,28 +894,22 @@ def calculate_rewards(
         and normalized_guesser_pred == normalized_actual
     )
 
-    # REWARD STRUCTURE WITH FORMAT PENALTIES:
-    # Generator penalties:
+    # REWARD STRUCTURE WITH NEW SPECIFICATION:
+    # Generator penalties for execution/format failures:
     if not code_executable:
         generator_reward = -1.0  # Code doesn't run
     elif not output_format_valid:
         generator_reward = -1.0  # Code output wrong format
     elif not generator_prediction_format_valid:
         generator_reward = -1.0  # Generator prediction wrong format
+    elif not generator_prediction_correct:
+        generator_reward = -1.0  # Generator prediction incorrect
     else:
-        # Code runs and formats are valid - use shaped rewards
-        BASE_REWARD_EXECUTES = 0.3  # reward for runnable code
-        BONUS_SELF_PRED_CORRECT = 0.4  # bonus when generator predicts correctly
-        PENALTY_GUESSER_CORRECT = 0.7  # penalty if guesser also predicts correctly
-
-        generator_reward = BASE_REWARD_EXECUTES
-        if generator_prediction_correct:
-            generator_reward += BONUS_SELF_PRED_CORRECT
+        # Code works AND generator predicts correctly - check guesser
         if guesser_prediction_correct:
-            generator_reward -= PENALTY_GUESSER_CORRECT
-
-        # Clip reward to [-1, 1] for GRPO stability
-        generator_reward = max(min(generator_reward, 1.0), -1.0)
+            generator_reward = 0.2  # Both correct: +0.2
+        else:
+            generator_reward = 1.0  # Generator wins: +1.0
 
     # Guesser penalties:
     if not guesser_prediction_format_valid:
