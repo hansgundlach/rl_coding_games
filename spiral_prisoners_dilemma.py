@@ -234,7 +234,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.seed_manager import SeedManager
-from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
+from evaluation import (
+    MBPPEvaluator,
+    create_eval_config_for_training,
+    print_config_summary,
+)
 from game_environments.prisoners_dilemma import IteratedPrisonersDilemma
 from game_environments.base_game import PlayerSubmission
 
@@ -256,48 +260,10 @@ print("🎲 Setting up seed management...")
 seed_manager = SeedManager.from_config(config)
 seed_manager.seed_everything()
 
-# Initialize MBPP evaluator with consolidated config
+# Initialize MBPP evaluator with proper configuration
 print("🧪 Setting up MBPP evaluator...")
-
-# Create evaluation config from main config
-eval_config_dict = config.get("evaluation", {}).copy()
-
-# Remove keys not expected by EvalConfig constructor
-eval_config_dict.pop("enabled_initial", None)
-eval_config_dict.pop("enabled_final", None)
-eval_config_dict.pop("enabled_interval", None)
-eval_config_dict.pop("eval_interval_steps", None)
-# Keep consistent_questions for EvalConfig (it now supports this field)
-
-# Create EvalConfig object from consolidated config
-eval_config = EvalConfig(**eval_config_dict)
-
-# Print evaluation config summary
-print("\n" + "=" * 50)
-print("🧪 MBPP Evaluation Configuration")
-print("=" * 50)
-print(f"Enabled: {'✅' if eval_config.enabled else '❌'}")
-if eval_config.enabled:
-    print(f"Questions: {eval_config.num_questions}")
-    print(
-        f"Initial eval: {'✅' if config['evaluation'].get('enabled_initial', True) else '❌'}"
-    )
-    print(
-        f"Final eval: {'✅' if config['evaluation'].get('enabled_final', True) else '❌'}"
-    )
-    print(
-        f"Interval eval: {'✅' if config['evaluation'].get('enabled_interval', False) else '❌'}"
-    )
-    if config["evaluation"].get("enabled_interval", False):
-        print(
-            f"Eval every: {config['evaluation'].get('eval_interval_steps', 'N/A')} steps"
-        )
-    print(f"Dataset: {eval_config.dataset_path or 'auto-detect'}")
-    print(f"Results dir: {eval_config.results_dir}")
-    print(f"Temperature: {eval_config.temperature}")
-    print(f"Max tokens: {eval_config.max_new_tokens}")
-    print(f"Timeout: {eval_config.timeout_seconds}s")
-print("=" * 50 + "\n")
+eval_config = create_eval_config_for_training("spiral_prisoners_dilemma")
+print_config_summary(eval_config)
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 

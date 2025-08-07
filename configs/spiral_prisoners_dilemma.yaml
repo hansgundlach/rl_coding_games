@@ -94,8 +94,8 @@ vllm:
   enabled: false              # Disabled by default
   gpu_memory_utilization: 0.85
   max_model_len: 2048
-  trust_remote_code: true
+  trust_remote_code: false
   
   integration:
     use_for_grpo_completions: false
-    log_performance_comparison: true
+    log_performance_comparison: false
