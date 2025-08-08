@@ -260,6 +260,9 @@ print("🧪 Setting up MBPP evaluator...")
 # Create evaluation config from main config
 eval_config_dict = config.get("evaluation", {}).copy()
 
+# Debug: Print evaluation config
+print(f"📋 Evaluation config from YAML: temperature={eval_config_dict.get('temperature')}, do_sample={eval_config_dict.get('do_sample')}")
+
 # Remove keys not expected by EvalConfig constructor
 eval_config_dict.pop("enabled_initial", None)
 eval_config_dict.pop("enabled_final", None)
@@ -269,6 +272,7 @@ eval_config_dict.pop("consistent_questions", None)
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
+print(f"📋 Final EvalConfig: temperature={eval_config.temperature}, do_sample={eval_config.do_sample}")
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 

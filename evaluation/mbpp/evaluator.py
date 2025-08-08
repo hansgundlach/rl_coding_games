@@ -337,6 +337,8 @@ class MBPPEvaluator:
 
     def _generate_with_hf(self, prompt: str, model, tokenizer) -> str:
         """Generate text using HuggingFace model"""
+        logger.info(f"🔍 HF Generate config: temperature={self.config.temperature}, do_sample={self.config.do_sample}")
+        
         # Tokenize
         inputs = tokenizer(
             prompt, return_tensors="pt", truncation=True, max_length=1024, padding=True
@@ -355,9 +357,11 @@ class MBPPEvaluator:
         
         # Handle temperature=0.0 case properly for newer transformers
         if self.config.temperature == 0.0:
+            logger.info(f"🎯 Using greedy decoding (temperature=0.0, do_sample=False)")
             generation_kwargs["do_sample"] = False  # Greedy decoding
             # Don't add temperature for greedy decoding
         else:
+            logger.info(f"🎯 Using sampling (temperature={self.config.temperature}, do_sample={self.config.do_sample})")
             generation_kwargs["temperature"] = self.config.temperature
             generation_kwargs["do_sample"] = self.config.do_sample
 
