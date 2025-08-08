@@ -44,7 +44,7 @@ generation:
 
 # Training Configuration
 training:
-  num_steps: 1000                 # Training steps
+  num_steps: 2000                 # Training steps
   games_per_step: 8             # Games per training step
   save_interval: 10             # Save checkpoint every N steps
   checkpoint_dir: "./checkpoints/grpo_code_game_icl"

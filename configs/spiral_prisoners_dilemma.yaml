@@ -45,7 +45,7 @@ generation:
 
 # Training parameters
 training:
-  num_steps: 1000
+  num_steps: 2000
   learning_rate: 0.00002
   rae_alpha: 0.95                   # Role-conditioned advantage estimation decay rate
   gradient_clip_norm: 1.0

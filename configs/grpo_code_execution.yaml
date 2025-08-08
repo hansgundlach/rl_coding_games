@@ -43,7 +43,7 @@ training_args:
 
   remove_unused_columns: False
   logging_steps: 1
-  max_steps: 120  # Set to 2 for quick pipeline testing
+  max_steps: 2000  # Set to 2 for quick pipeline testing
 
 # --- Weights & Biases Logging Settings ---
 wandb:
