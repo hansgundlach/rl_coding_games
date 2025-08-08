@@ -642,27 +642,39 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     # ------------------------------------------------------------------
     simulation_setup_start_time = time.time()
 
-    # Build strategy pairs
+    # Build strategy pairs with proper code extraction and validation
     strategy_pairs = []
     for i, (main_completion, opp_completion) in enumerate(
         zip(completions, opponent_completions)
     ):
+        # Extract and validate player 1 strategy (main model)
+        p1_extracted_code = game_env.extract_code_from_response(main_completion)
+        p1_is_valid, p1_error_msg = game_env.validate_submission(p1_extracted_code, 0, "player")
+        
         player1_sub = PlayerSubmission(
             player_id=0,
             role="player",
-            prompt="strategy",
+            prompt=game_env.get_player_prompt(0, "player"),
             response=main_completion,
-            extracted_code=main_completion,
-            compilation_success=True,
+            extracted_code=p1_extracted_code,
+            compilation_success=p1_is_valid,
+            compilation_error=p1_error_msg if not p1_is_valid else None,
         )
+        
+        # Extract and validate player 2 strategy (opponent model)  
+        p2_extracted_code = game_env.extract_code_from_response(opp_completion)
+        p2_is_valid, p2_error_msg = game_env.validate_submission(p2_extracted_code, 1, "player")
+        
         player2_sub = PlayerSubmission(
             player_id=1,
             role="player",
-            prompt="strategy",
+            prompt=game_env.get_player_prompt(1, "player"),
             response=opp_completion,
-            extracted_code=opp_completion,
-            compilation_success=True,
+            extracted_code=p2_extracted_code,
+            compilation_success=p2_is_valid,
+            compilation_error=p2_error_msg if not p2_is_valid else None,
         )
+        
         # Create a fresh copy of game_env for each game to avoid threading issues
         game_env_copy = copy.deepcopy(game_env)
         strategy_pairs.append((player1_sub, player2_sub, game_env_copy, i))
