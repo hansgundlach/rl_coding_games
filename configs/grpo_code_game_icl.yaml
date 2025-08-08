@@ -48,6 +48,7 @@ training:
   games_per_step: 8             # Games per training step
   save_interval: 10             # Save checkpoint every N steps
   checkpoint_dir: "./checkpoints/grpo_code_game_icl"
+  num_gpus: 1                   # Number of GPUs to use (1 or 2). If >1, launch with torchrun
 
 # GRPO Training Arguments
 training_args:
@@ -102,7 +103,7 @@ wandb:
 
 # vLLM Configuration (optional)
 vllm:
-  enabled: true
+  enabled: false
   server:
     host: "127.0.0.1"
     port: 8000

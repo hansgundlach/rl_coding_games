@@ -494,6 +494,12 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         opponent_model.eval()
         print("✅ Opponent model refreshed with latest weights")
 
+    # ------------------------------------------------------------------
+    # TIMING: Start comprehensive reward function timing
+    # ------------------------------------------------------------------
+    import time
+    reward_start_time = time.time()
+    
     print(
         f"🎮 Playing {len(completions)} prisoner's dilemma games for reward calculation..."
     )
@@ -509,40 +515,118 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         "games_with_noise": 0,
     }
 
-    # Generate opponent strategies for each game
+    # ------------------------------------------------------------------
+    # Phase 1: Generate opponent strategies (GPU-bound, batch optimized)
+    # ------------------------------------------------------------------
+    generation_start_time = time.time()
+    print(f"🧠 Generating opponent strategies for {len(completions)} games...")
+    
+    # Try batch generation first (much faster)
+    use_batch_generation = len(completions) > 1
     opponent_completions = []
-    for i in range(len(completions)):
-        # Generate opponent strategy with frozen model
-        prompt = game_env.get_player_prompt(1, "player")  # Player 2 prompt
+    
+    if use_batch_generation:
+        try:
+            batch_start = time.time()
+            
+            # Build all opponent prompts for batch processing
+            opponent_prompts = []
+            for i in range(len(completions)):
+                prompt = game_env.get_player_prompt(1, "player")  # Player 2 prompt
+                opponent_prompts.append(prompt)
+            
+            # Batch tokenize all prompts
+            inputs = tokenizer(
+                opponent_prompts, return_tensors="pt", truncation=True, max_length=1024, padding=True
+            )
+            if device.type == "cuda":
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            # Prepare generation arguments
+            generation_kwargs = {
+                "max_new_tokens": config["generation"]["max_new_tokens"],
+                "temperature": config["generation"]["temperature"],
+                "top_p": config["generation"]["top_p"],
+                "do_sample": config["generation"]["do_sample"],
+                "pad_token_id": tokenizer.eos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+            }
+            
+            # Only add top_k if it's specified and positive
+            if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
+                generation_kwargs["top_k"] = config["generation"]["top_k"]
+            
+            # Batch generate all opponent strategies in single GPU call (HUGE SPEEDUP!)
+            with torch.no_grad():
+                outputs = opponent_model.generate(**inputs, **generation_kwargs)
+            
+            # Decode all opponent completions
+            for i, output in enumerate(outputs):
+                opponent_text = tokenizer.decode(
+                    output[inputs["input_ids"].shape[1]:], skip_special_tokens=True
+                ).strip()
+                opponent_completions.append(opponent_text)
+            
+            batch_time = time.time() - batch_start
+            avg_per_game = batch_time / len(completions)
+            print(f"🚀 BATCH OPPONENT GENERATION SUCCESS: {len(completions)} strategies in {batch_time:.3f}s ({avg_per_game:.3f}s per game)")
+            use_batch_generation = True  # Success, log this
+            
+        except Exception as e:
+            batch_time = time.time() - batch_start
+            print(f"❌ BATCH OPPONENT GENERATION FAILED after {batch_time:.3f}s: {e}")
+            print("🔄 Falling back to individual generation...")
+            use_batch_generation = False  # Failed, fall back
+            
+    if not use_batch_generation:
+        # Fallback to individual generation
+        individual_start = time.time()
+        print("🔄 Using individual opponent strategy generation")
+        
+        for i in range(len(completions)):
+            # Generate opponent strategy with frozen model
+            prompt = game_env.get_player_prompt(1, "player")  # Player 2 prompt
 
-        inputs = tokenizer(
-            prompt, return_tensors="pt", truncation=True, max_length=1024
-        )
-        if device.type == "cuda":
-            inputs = {k: v.to(device) for k, v in inputs.items()}
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=1024
+            )
+            if device.type == "cuda":
+                inputs = {k: v.to(device) for k, v in inputs.items()}
 
-        generation_kwargs = {
-            "max_new_tokens": config["generation"]["max_new_tokens"],
-            "temperature": config["generation"]["temperature"],
-            "top_p": config["generation"]["top_p"],
-            "do_sample": config["generation"]["do_sample"],
-            "pad_token_id": tokenizer.eos_token_id,
-            "eos_token_id": tokenizer.eos_token_id,
-        }
+            generation_kwargs = {
+                "max_new_tokens": config["generation"]["max_new_tokens"],
+                "temperature": config["generation"]["temperature"],
+                "top_p": config["generation"]["top_p"],
+                "do_sample": config["generation"]["do_sample"],
+                "pad_token_id": tokenizer.eos_token_id,
+                "eos_token_id": tokenizer.eos_token_id,
+            }
 
-        # Only add top_k if it's specified and positive
-        if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
-            generation_kwargs["top_k"] = config["generation"]["top_k"]
+            # Only add top_k if it's specified and positive
+            if "top_k" in config["generation"] and config["generation"]["top_k"] > 0:
+                generation_kwargs["top_k"] = config["generation"]["top_k"]
 
-        with torch.no_grad():
-            outputs = opponent_model.generate(**inputs, **generation_kwargs)
+            with torch.no_grad():
+                outputs = opponent_model.generate(**inputs, **generation_kwargs)
 
-        opponent_text = tokenizer.decode(
-            outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
-        ).strip()
-        opponent_completions.append(opponent_text)
+            opponent_text = tokenizer.decode(
+                outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+            ).strip()
+            opponent_completions.append(opponent_text)
+        
+        individual_time = time.time() - individual_start
+        avg_per_game = individual_time / len(completions)
+        print(f"🔄 INDIVIDUAL OPPONENT GENERATION COMPLETE: {len(completions)} strategies in {individual_time:.3f}s ({avg_per_game:.3f}s per game)")
 
-    # Play games in parallel
+    generation_time = time.time() - generation_start_time
+    print(f"⚡ OPPONENT GENERATION PHASE COMPLETE: {generation_time:.3f}s total")
+
+    # ------------------------------------------------------------------
+    # Phase 2: Game simulation setup and execution (CPU-bound, parallel)
+    # ------------------------------------------------------------------
+    simulation_setup_start_time = time.time()
+    
+    # Build strategy pairs
     strategy_pairs = []
     for i, (main_completion, opp_completion) in enumerate(
         zip(completions, opponent_completions)
@@ -567,16 +651,25 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         game_env_copy = copy.deepcopy(game_env)
         strategy_pairs.append((player1_sub, player2_sub, game_env_copy, i))
 
+    simulation_setup_time = time.time() - simulation_setup_start_time
+
     # Simulate games (potentially in parallel)
     parallel_games = config["training"].get("parallel_games", True)
     num_workers = config["training"].get("num_workers", None)
 
+    simulation_start_time = time.time()
     if parallel_games and len(strategy_pairs) > 1:
         max_workers = num_workers or (os.cpu_count() or 1)
+        print(f"⚙️  Running {len(strategy_pairs)} games in parallel with {max_workers} workers")
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             trajectories = list(executor.map(simulate_single_game, strategy_pairs))
     else:
+        print(f"🔄 Running {len(strategy_pairs)} games sequentially")
         trajectories = [simulate_single_game(pair) for pair in strategy_pairs]
+    
+    simulation_time = time.time() - simulation_start_time
+    avg_simulation_per_game = simulation_time / len(strategy_pairs)
+    print(f"⚡ GAME SIMULATION PHASE COMPLETE: {simulation_time:.3f}s total ({avg_simulation_per_game:.3f}s per game)")
 
     # Calculate rewards
     for trajectory in trajectories:
@@ -623,8 +716,54 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
 
         rewards.append(reward)
 
-    # Store stats for logging
+    # ------------------------------------------------------------------
+    # Phase 3: Statistics calculation and comprehensive timing
+    # ------------------------------------------------------------------
+    statistics_start_time = time.time()
+    
+    # Store stats for logging with comprehensive timing data
+    total_reward_time = time.time() - reward_start_time
+    statistics_time = time.time() - statistics_start_time
+    other_time = total_reward_time - generation_time - simulation_setup_time - simulation_time - statistics_time
+    
+    # Add timing information to game stats
+    game_stats.update({
+        # Comprehensive timing breakdown
+        "reward_timing/total_time": total_reward_time,
+        "reward_timing/generation_time": generation_time,
+        "reward_timing/simulation_setup_time": simulation_setup_time,
+        "reward_timing/simulation_time": simulation_time,
+        "reward_timing/statistics_time": statistics_time,
+        "reward_timing/other_time": other_time,
+        "reward_timing/batch_generation_used": use_batch_generation,
+        "reward_timing/parallel_simulation_used": parallel_games and len(strategy_pairs) > 1,
+        "reward_timing/num_workers": max_workers if parallel_games and len(strategy_pairs) > 1 else 1,
+        "reward_timing/avg_generation_per_game": generation_time / len(completions),
+        "reward_timing/avg_simulation_per_game": avg_simulation_per_game,
+    })
+    
     reward_state.last_game_stats = game_stats
+
+    # Print comprehensive timing breakdown
+    print(f"⏱️  REWARD FUNCTION TIMING BREAKDOWN:")
+    print(f"   Total: {total_reward_time:.3f}s")
+    print(f"   Generation: {generation_time:.3f}s ({100*generation_time/total_reward_time:.1f}%)")
+    print(f"   Simulation: {simulation_time:.3f}s ({100*simulation_time/total_reward_time:.1f}%)")
+    print(f"   Other: {other_time:.3f}s ({100*other_time/total_reward_time:.1f}%)")
+    
+    # Performance optimizations summary
+    optimization_summary = []
+    if use_batch_generation:
+        optimization_summary.append("🚀 Batch Generation")
+    else:
+        optimization_summary.append("🔄 Individual Generation")
+        
+    if parallel_games and len(strategy_pairs) > 1:
+        optimization_summary.append(f"⚙️  Parallel Simulation ({max_workers} workers)")
+    else:
+        optimization_summary.append("🔄 Sequential Simulation")
+        
+    print(f"⚡ Optimizations: {' | '.join(optimization_summary)}")
 
     # Show some debug info
     debug_config = config.get("debug", {})
@@ -800,6 +939,21 @@ class IntervalEvaluationCallback(TrainerCallback):
         self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
 
     def on_step_end(self, args, state, control, **kwargs):
+        # Log reward function statistics if available
+        if (
+            self.wandb_enabled 
+            and wandb.run 
+            and reward_state.last_game_stats is not None
+        ):
+            # Log game statistics and timing from reward function
+            game_stats = reward_state.last_game_stats
+            log_dict = {
+                f"game/{key}": value for key, value in game_stats.items()
+                if isinstance(value, (int, float, bool))
+            }
+            log_dict["step"] = state.global_step
+            wandb.log(log_dict)
+        
         # Run interval evaluation if configured
         if (
             self.config["evaluation"].get("enabled_interval", False)

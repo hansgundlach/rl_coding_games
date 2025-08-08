@@ -20,6 +20,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import torch  # Can be slow
+import torch.distributed as dist
 import torch.nn.functional as F
 from datasets import Dataset  # HuggingFace datasets
 from peft import LoraConfig, get_peft_model  # PEFT library
@@ -65,6 +66,50 @@ args, unknown_args = parser.parse_known_args()
 print(f"📝 Loading configuration from: {args.config}")
 with open(args.config, "r") as f:
     config = yaml.safe_load(f)
+
+
+# ---------------- Distributed initialization ----------------
+def init_distributed():
+    """Initialize torch.distributed if launched under torchrun.
+    Returns a dict with rank/world_size/local_rank and is_main_process.
+    """
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        local_rank = int(os.environ.get("LOCAL_RANK", rank % max(torch.cuda.device_count(), 1)))
+
+        print(f"[Rank {rank}] Initializing distributed training...")
+        print(f"[Rank {rank}] World size: {world_size}, Local rank: {local_rank}")
+
+        dist.init_process_group(backend="nccl")
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+
+        return {
+            "rank": rank,
+            "world_size": world_size,
+            "local_rank": local_rank,
+            "is_main_process": rank == 0,
+        }
+    else:
+        return {"rank": 0, "world_size": 1, "local_rank": 0, "is_main_process": True}
+
+
+dist_info = init_distributed()
+
+# Respect a config knob for requested GPUs; warn if mismatch with actual world size
+requested_gpus = int(config.get("training", {}).get("num_gpus", 1))
+if requested_gpus > 1 and dist_info["world_size"] == 1:
+    print(
+        "⚠️ training.num_gpus>1 but distributed environment not detected.\n"
+        "   To use multiple GPUs on a single node, launch with:\n"
+        f"   torchrun --nproc-per-node={requested_gpus} grpo_code_game_icl.py --config {args.config}"
+    )
+if dist_info["world_size"] > 1 and requested_gpus != dist_info["world_size"]:
+    print(
+        f"ℹ️ Detected world_size={dist_info['world_size']} from torchrun; overriding training.num_gpus={requested_gpus}"
+    )
+    config.setdefault("training", {})["num_gpus"] = dist_info["world_size"]
 
 
 # Apply config overrides from command line
@@ -129,8 +174,8 @@ def apply_config_overrides(config, override_args):
 # Apply any config overrides
 config = apply_config_overrides(config, unknown_args)
 
-# Extract config values for easy access
-WANDB_ENABLED = config["wandb"]["enabled"]
+# Extract config values for easy access (enable W&B only on main process)
+WANDB_ENABLED = bool(config["wandb"]["enabled"]) and dist_info["is_main_process"]
 
 
 def detect_platform_and_gpu():
@@ -197,15 +242,21 @@ def detect_platform_and_gpu():
 
 
 # Auto-detect platform and capabilities
-print("🔧 Running platform detection...")
+if dist_info["is_main_process"]:
+    print("🔧 Running platform detection...")
 platform_info = detect_platform_and_gpu()
-print(f"🔍 Auto-detected: {platform_info['platform']} platform")
-print(
-    f"🎮 GPU: {platform_info['gpu_type']}, BF16 support: {platform_info['supports_bf16']}"
-)
-print(
-    f"🌐 Offline mode: {platform_info['offline_mode']} ({platform_info['offline_reason']})"
-)
+if dist_info["is_main_process"]:
+    print(f"🔍 Auto-detected: {platform_info['platform']} platform")
+    print(
+        f"🎮 GPU: {platform_info['gpu_type']}, BF16 support: {platform_info['supports_bf16']}"
+    )
+    print(
+        f"🌐 Offline mode: {platform_info['offline_mode']} ({platform_info['offline_reason']})"
+    )
+    if dist_info["world_size"] > 1:
+        print(
+            f"🌐 Distributed training: {dist_info['world_size']} GPUs (Rank {dist_info['rank']}/{dist_info['world_size']-1})"
+        )
 
 # Extract values for easier use
 offline_mode = platform_info["offline_mode"]
@@ -221,7 +272,8 @@ if WANDB_ENABLED:  # Check if W&B is enabled by user
         timestamp = datetime.datetime.now().strftime("%b%d_%Y_%Hh%Mm")
         run_id = f"grpo-code-game-icl-{timestamp.replace('_', '-').replace('h', 'h-').replace('m', 'm')}"
         os.environ["WANDB_RUN_ID"] = run_id
-        print(f"🔧 Set WANDB_RUN_ID for offline mode: {run_id}")
+        if dist_info["is_main_process"]:
+            print(f"🔧 Set WANDB_RUN_ID for offline mode: {run_id}")
 
         print("✅ Set global offline mode for transformers and wandb")
     else:
@@ -231,29 +283,34 @@ if WANDB_ENABLED:  # Check if W&B is enabled by user
         os.environ.pop("WANDB_MODE", None)
 else:  # If WANDB_ENABLED is False, explicitly disable W&B
     os.environ["WANDB_MODE"] = "disabled"
-    print("🚫 W&B logging explicitly disabled by user configuration.")
+    if dist_info["is_main_process"]:
+        print("🚫 W&B logging explicitly disabled by user configuration.")
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-print("📦 Loading utility modules...")
+if dist_info["is_main_process"]:
+    print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.seed_manager import SeedManager
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 from utils.vllm_client import initialize_vllm_integration, get_vllm_integration
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
-if WANDB_ENABLED:  # Only try to log in if W&B is enabled
+if WANDB_ENABLED:  # Only try to log in if W&B is enabled (main process)
     wandb_key = get_api_key("wandb", required=False)
     if wandb_key:
         wandb.login(key=wandb_key)
-        print("✓ Logged into W&B using environment variable")
+        if dist_info["is_main_process"]:
+            print("✓ Logged into W&B using environment variable")
     else:
-        print(
-            "⚠️ No W&B API key found, continuing with W&B logging (if online) or local saves (if offline)."
-        )
+        if dist_info["is_main_process"]:
+            print(
+                "⚠️ No W&B API key found, continuing with W&B logging (if online) or local saves (if offline)."
+            )
 else:
-    print("🚫 Skipping W&B login (W&B is disabled by user).")
+    if dist_info["is_main_process"]:
+        print("🚫 Skipping W&B login (W&B is disabled by user or not main process).")
 
 # Initialize comprehensive seed management
 print("🎲 Setting up seed management...")
@@ -261,15 +318,17 @@ seed_manager = SeedManager.from_config(config)
 seed_manager.seed_everything()
 
 # Initialize MBPP evaluator with consolidated config
-print("🧪 Setting up MBPP evaluator...")
+if dist_info["is_main_process"]:
+    print("🧪 Setting up MBPP evaluator...")
 
 # Create evaluation config from main config
 eval_config_dict = config.get("evaluation", {}).copy()
 
 # Debug: Print evaluation config
-print(
-    f"📋 Evaluation config from YAML: temperature={eval_config_dict.get('temperature')}, do_sample={eval_config_dict.get('do_sample')}"
-)
+if dist_info["is_main_process"]:
+    print(
+        f"📋 Evaluation config from YAML: temperature={eval_config_dict.get('temperature')}, do_sample={eval_config_dict.get('do_sample')}"
+    )
 
 # Remove keys not expected by EvalConfig constructor
 eval_config_dict.pop("enabled_initial", None)
@@ -280,18 +339,20 @@ eval_config_dict.pop("consistent_questions", None)
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
-print(
-    f"📋 Final EvalConfig: temperature={eval_config.temperature}, do_sample={eval_config.do_sample}"
-)
+if dist_info["is_main_process"]:
+    print(
+        f"📋 Final EvalConfig: temperature={eval_config.temperature}, do_sample={eval_config.do_sample}"
+    )
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
-if not mbpp_evaluator.config.enabled:
-    print("⚠️ MBPP evaluation disabled - dataset not found")
-else:
-    print(
-        f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
-    )
+if dist_info["is_main_process"]:
+    if not mbpp_evaluator.config.enabled:
+        print("⚠️ MBPP evaluation disabled - dataset not found")
+    else:
+        print(
+            f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
+        )
 
 
 def safe_execute_code(code: str, timeout: int = 5) -> dict:
@@ -1050,10 +1111,13 @@ os.makedirs(cache_dir, exist_ok=True)
 generator_model_id = config["generator_model"]["id"]
 print(f"📥 Loading generator model: {generator_model_id}")
 
+gen_device_map = (
+    {"": dist_info["local_rank"]} if dist_info["world_size"] > 1 else "auto"
+)
 generator_model = AutoModelForCausalLM.from_pretrained(
     generator_model_id,
     torch_dtype=torch.float16,  # Use fp16
-    device_map="auto",
+    device_map=gen_device_map,
     cache_dir=cache_dir,
     local_files_only=offline_mode,
     load_in_8bit=True,  # 8-bit quantization
@@ -1070,10 +1134,13 @@ if generator_tokenizer.pad_token is None:
 guesser_model_id = config["guesser_model"]["id"]
 print(f"📥 Loading guesser model (frozen): {guesser_model_id}")
 
+guess_device_map = (
+    {"": dist_info["local_rank"]} if dist_info["world_size"] > 1 else "auto"
+)
 guesser_model = AutoModelForCausalLM.from_pretrained(
     guesser_model_id,
     torch_dtype=torch.float16,
-    device_map="auto",  # or "cpu" for guesser
+    device_map=guess_device_map,  # keep on same GPU as generator per-rank
     cache_dir=cache_dir,
     local_files_only=offline_mode,
     load_in_8bit=True,  # 8-bit quantization
@@ -1213,9 +1280,14 @@ if offline_mode:
     except Exception as e:
         print(f"⚠️ Could not set offline model config path: {e}")
 
-grpo_config = GRPOConfig(**training_args)
+grpo_config = GRPOConfig(
+    **training_args,
+    ddp_find_unused_parameters=False,
+    report_to=(["wandb"] if WANDB_ENABLED else []),
+)
 
-print("🎮 Starting GRPO Code Game with ICL Memory Training")
+if dist_info["is_main_process"]:
+    print("🎮 Starting GRPO Code Game with ICL Memory Training")
 
 # Initialize wandb run (only if W&B is enabled by user)
 if WANDB_ENABLED:
@@ -1236,14 +1308,25 @@ if WANDB_ENABLED:
     wandb.init(
         project=project_name,
         name=run_name,
-        config={**config, **seed_manager.get_seed_info()},
+        config={
+            **config,
+            **seed_manager.get_seed_info(),
+            "distributed": {
+                "world_size": dist_info["world_size"],
+                "rank": dist_info["rank"],
+            },
+        },
     )
     print(
         f"✅ Initialized W&B run: {wandb.run.name} (Project: {project_name}, Offline mode: {offline_mode})"
     )
 
 # Run initial MBPP evaluation if enabled
-if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.enabled:
+if (
+    dist_info["is_main_process"]
+    and config["evaluation"].get("enabled_initial", True)
+    and mbpp_evaluator.config.enabled
+):
     print("🧪 Running initial MBPP evaluation...")
     # Seed for consistent evaluation
     seed_manager.seed_for_evaluation_auto("initial")
@@ -1645,9 +1728,9 @@ def icl_enhanced_reward_function(completions, **kwargs):
             grpo_reward_time = step_data.get("reward_computation_time", 0.0)
             grpo_weight_update_time = step_data.get("weight_update_time", 0.0)
             grpo_complete_step_time = step_data.get("complete_step_time", 0.0)
-            print(
-                f"🔍 TIMING DEBUG: Found data for step {current_step}: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s"
-            )
+                print(
+                    f"🔍 TIMING DEBUG: Found data for step {current_step}: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s"
+                )
         else:
             print(
                 f"🔍 TIMING DEBUG: No data found for step {current_step}, trying most recent step"
