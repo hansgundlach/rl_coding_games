@@ -68,7 +68,7 @@ evaluation:
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   
   # MBPP evaluation settings (for general coding ability)
-  num_questions: 20            # Reduced for faster evaluation during training
+  num_questions: 40            # Reduced for faster evaluation during training
   dataset_path: null          # Auto-detect MBPP dataset location
   results_dir: "./eval_results/spiral_prisoners_dilemma"
   temperature: 0.0

@@ -470,6 +470,7 @@ def execution_reward_function(completions, **kwargs):
     """
     rewards = []
 
+    # Initialize statistics tracking
     successful_executions = 0
     failed_executions = 0
     timeout_executions = 0
@@ -493,6 +494,16 @@ def execution_reward_function(completions, **kwargs):
         ):
             print(f"🚀 Using vLLM for {len(completions)} completions")
 
+    # Seed for deterministic reward function processing
+    if "seed_manager" in kwargs:
+        kwargs["seed_manager"].seed_for_generation(step=0, generation_idx=0)
+
+    # Batch process code extraction for all completions (speedup optimization)
+    print(f"🔄 Processing {len(completions)} completions...")
+    codes_to_execute = []
+    completion_indices = []
+
+    # First pass: extract all code snippets in batch
     for i, comp in enumerate(completions):
         if not isinstance(comp, str):
             rewards.append(-1.0)  # Invalid completion
@@ -511,6 +522,16 @@ def execution_reward_function(completions, **kwargs):
             rewards.append(-1.0)  # No code generated
             failed_executions += 1
             continue
+
+        # Store for batch execution
+        codes_to_execute.append(code)
+        completion_indices.append(i)
+        rewards.append(None)  # Placeholder for later filling
+
+    # Second pass: batch execute all valid code snippets
+    print(f"⚡ Executing {len(codes_to_execute)} code snippets...")
+    for idx, code in enumerate(codes_to_execute):
+        completion_idx = completion_indices[idx]
 
         # Execute the code safely
         execution_result = safe_execute_code(
@@ -544,10 +565,13 @@ def execution_reward_function(completions, **kwargs):
             reward = config["rewards"]["runtime_error"]  # Bad: runtime errors
             failed_executions += 1
 
+        # Fill in the reward for this completion
+        rewards[completion_idx] = reward
+
         # Debug output (show first few)
-        if i < config["execution"]["debug_completions"]:
+        if idx < config["execution"]["debug_completions"]:
             print("=" * 50)
-            print(f"Completion {i+1}:")
+            print(f"Completion {completion_idx+1}:")
             print(f"Code: {code[:200]}...")
             print(f"Success: {execution_result['success']}")
             print(f"Output: {execution_result['output'][:100]}")
@@ -559,10 +583,8 @@ def execution_reward_function(completions, **kwargs):
         # Show progress for all completions
         status = "✅" if execution_result["success"] else "❌"
         print(
-            f"Completion {i+1}/{len(completions)}: {status} reward={reward:.1f}, time={execution_result['execution_time']:.2f}s"
+            f"Completion {completion_idx+1}/{len(completions)}: {status} reward={reward:.1f}, time={execution_result['execution_time']:.2f}s"
         )
-
-        rewards.append(reward)
 
     # Log metrics to wandb after processing the entire batch
     if WANDB_ENABLED and wandb.run:  # Only log if W&B is enabled and run is active
@@ -658,11 +680,19 @@ if offline_mode:
         model1.config._name_or_path = cached_model_dirs[0]
         print(f"🔧 Set model config path to: {cached_model_dirs[0]}")
 
+
+# Create reward function wrapper with seed manager
+def wrapped_execution_reward_function(completions, **kwargs):
+    """Wrapper to pass seed_manager to the reward function."""
+    kwargs["seed_manager"] = seed_manager
+    return execution_reward_function(completions, **kwargs)
+
+
 # Create trainer
 print("🏋️ Initializing GRPO trainer...")
 trainer = GRPOTrainer(
     model=model1,
-    reward_funcs=[execution_reward_function],
+    reward_funcs=[wrapped_execution_reward_function],
     args=training_args,
     train_dataset=dataset,
 )
@@ -699,6 +729,8 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.should_e
     is_start=True
 ):
     print("🧪 Running initial MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("initial_evaluation")
     initial_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=0, phase="initial"
     )
@@ -730,12 +762,15 @@ from transformers import TrainerCallback
 
 
 class IntervalEvaluationCallback(TrainerCallback):
-    def __init__(self, evaluator, model, tokenizer, config, wandb_enabled):
+    def __init__(
+        self, evaluator, model, tokenizer, config, wandb_enabled, seed_manager
+    ):
         self.evaluator = evaluator
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
         self.wandb_enabled = wandb_enabled
+        self.seed_manager = seed_manager
         self.eval_interval = config["evaluation"].get("eval_interval_steps", None)
 
     def on_step_end(self, args, state, control, **kwargs):
@@ -757,6 +792,10 @@ class IntervalEvaluationCallback(TrainerCallback):
         ):
 
             print(f"🧪 Running interval MBPP evaluation at step {state.global_step}...")
+            # Seed for consistent evaluation
+            self.seed_manager.seed_for_evaluation_auto(
+                f"interval_step_{state.global_step}"
+            )
             interval_results = self.evaluator.evaluate_model(
                 self.model, self.tokenizer, step=state.global_step, phase="interval"
             )
@@ -777,7 +816,7 @@ class IntervalEvaluationCallback(TrainerCallback):
 
 # Add the callback to trainer
 interval_callback = IntervalEvaluationCallback(
-    mbpp_evaluator, model1, tokenizer1, config, WANDB_ENABLED
+    mbpp_evaluator, model1, tokenizer1, config, WANDB_ENABLED, seed_manager
 )
 trainer.add_callback(interval_callback)
 
@@ -789,6 +828,8 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.should_eva
     is_end=True
 ):
     print("🧪 Running final MBPP evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("final_evaluation")
     final_results = mbpp_evaluator.evaluate_model(
         model1, tokenizer1, step=trainer.state.global_step, phase="final"
     )

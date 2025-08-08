@@ -2,7 +2,7 @@
 
 # --- Model Settings ---
 model:
-  id: "Qwen/Qwen3-1.7B"  # Base model to use (will try to find 1.5B, then 3B in cache)
+  id: "Qwen/Qwen3-4B"  # Base model to use (will try to find 1.5B, then 3B in cache)
   cache_dir: "./model_cache"
   # local_files_only will be set by the script based on offline_mode detection
 
@@ -58,8 +58,8 @@ evaluation:
   enabled: False                   # Enable/disable evaluation entirely
   enabled_initial: True            # Run initial MBPP evaluation
   enabled_final: True              # Run final MBPP evaluation
-  num_questions: 20                # Number of MBPP problems to evaluate
-  eval_interval_steps: 20        # Run evaluation every N steps (null = no intermediate evals)
+  num_questions: 40                # Number of MBPP problems to evaluate
+  eval_interval_steps: 20          # Run evaluation every N steps (null = no intermediate evals)
   consistent_questions: true       # Use same questions for all interval evaluations (default: true)
   
   # Dataset Configuration

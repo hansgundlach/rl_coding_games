@@ -86,7 +86,7 @@ evaluation:
   enabled_interval: true
   eval_interval_steps: 10
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
-  num_questions: 20
+  num_questions: 40
   temperature: 0.0
   do_sample: false            # Required when temperature=0.0 for greedy decoding
   max_new_tokens: 512
