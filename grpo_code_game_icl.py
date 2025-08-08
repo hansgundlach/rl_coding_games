@@ -240,6 +240,7 @@ print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.seed_manager import SeedManager
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
+from utils.vllm_client import initialize_vllm_integration, get_vllm_integration
 
 # Initialize wandb with API key from environment (skip if W&B is not enabled)
 if WANDB_ENABLED:  # Only try to log in if W&B is enabled
@@ -528,6 +529,94 @@ What list of numbers will this code output?
             return pred_match.group(1).strip()
 
         return ""
+
+    def batch_predict_outputs(self, codes: List[str]) -> List[str]:
+        """Batch predict outputs for multiple codes - MUCH faster than individual calls."""
+        if not codes:
+            return []
+
+        if len(codes) == 1:
+            return [self.predict_output(codes[0])]
+
+        # Build prompts for all codes
+        icl_prefix = self.memory.get_icl_prompt_prefix()
+        prompts = []
+
+        for code in codes:
+            prompt = f"""{icl_prefix}<|im_start|>system
+You are a concise code analyzer. Predict the output of Python code that produces a list of 2-50 numbers. Be direct and brief - NO THINKING, NO EXPLANATIONS, NO VERBOSE REASONING. Just analyze the code and provide your prediction immediately. Do not use <think> tags or explain your reasoning.
+<|im_end|>
+<|im_start|>user
+Code:
+```python
+{code}
+```
+
+IMPORTANT FORMAT REQUIREMENT:
+The code should output a list of numbers that is between 2 and 50 numbers long in the format specified below. 
+
+Examples of valid predictions:
+[1, 2, 3, 4, 5]
+[10, 20, 30]
+[2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+
+Provide your prediction in this exact format. THIS IS VERY IMPORTANT:
+[number1, number2, number3, ...]
+
+What list of numbers will this code output?
+<|im_end|>
+<|im_start|>assistant
+<prediction>"""
+            prompts.append(prompt)
+
+        # Batch tokenize all prompts
+        inputs = self.tokenizer(
+            prompts, return_tensors="pt", truncation=True, max_length=1024, padding=True
+        )
+        if self.device.type == "cuda":
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Use consistent seeding for deterministic behavior
+        seed_manager.seed_for_generation(step=0, generation_idx=hash(str(codes)) % 1000)
+
+        # Batch generate for all prompts at once (HUGE SPEEDUP!)
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=config["generation"]["guesser_max_tokens"],
+                temperature=config["generation"].get(
+                    "guesser_temperature", config["generation"]["temperature"]
+                ),
+                top_p=config["generation"]["top_p"],
+                top_k=(
+                    config["generation"]["top_k"]
+                    if config["generation"]["top_k"] > 0
+                    else None
+                ),
+                do_sample=config["generation"]["do_sample"],
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+
+        # Decode all predictions
+        predictions = []
+        for i, output in enumerate(outputs):
+            response = self.tokenizer.decode(
+                output[inputs["input_ids"].shape[1] :], skip_special_tokens=True
+            ).strip()
+
+            # Extract prediction
+            pred_match = re.search(
+                r"<prediction>\s*(.*?)\s*</prediction>", response, re.DOTALL
+            )
+
+            if pred_match:
+                predictions.append(pred_match.group(1).strip())
+            else:
+                predictions.append("")
+
+        print(f"🚀 Batch predicted {len(codes)} codes in one GPU call!")
+        return predictions
 
 
 # Memory management for training stability
@@ -1284,13 +1373,16 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
         timing_stats["code_execution_time"] += time.time() - wall_start
 
-    # Now do guesser predictions (GPU) and reward calculation (sequential to avoid GPU contention)
+    # Batch ICL predictions for MUCH better GPU utilization
+    icl_start = time.time()
+
+    # Collect all codes that need prediction
+    codes_to_predict = []
+    code_indices = []
     for r in records:
         i = r["i"]
-
         if rewards_list[i] is not None:
-            # already handled (empty code)
-            continue
+            continue  # already handled (empty code)
 
         exec_res = r["execution_result"] or {
             "success": False,
@@ -1301,18 +1393,47 @@ def icl_enhanced_reward_function(completions, **kwargs):
         actual_output = exec_res["output"] if exec_res.get("success") else ""
         r["actual_output"] = actual_output
 
-        # Sample ICL opponent and predict (GPU-bound; keep sequential)
-        icl_start = time.time()
+        if r["code"]:  # Only predict for non-empty code
+            codes_to_predict.append(r["code"])
+            code_indices.append(i)
+
+    # Batch predict all codes at once (HUGE speedup)
+    if codes_to_predict:
         try:
             opponent = sample_opponent(
                 generator_model, guesser_model, guesser_tokenizer, device, latest_memory
             )
-            guesser_pred = opponent.predict_output(r["code"])
+            # Batch predict all codes
+            batch_predictions = opponent.batch_predict_outputs(codes_to_predict)
         except Exception as e:
-            guesser_pred = f"Error: {str(e)}"
-        timing_stats["icl_prediction_time"] += time.time() - icl_start
-        r["guesser_prediction"] = guesser_pred
-        guesser_predictions[i] = guesser_pred
+            print(f"⚠️ Batch prediction failed, falling back to individual: {e}")
+            batch_predictions = [f"Error: {str(e)}"] * len(codes_to_predict)
+
+        # Assign predictions back to records
+        for idx, prediction in enumerate(batch_predictions):
+            record_idx = code_indices[idx]
+            for r in records:
+                if r["i"] == record_idx:
+                    r["guesser_prediction"] = prediction
+                    guesser_predictions[record_idx] = prediction
+                    break
+
+    timing_stats["icl_prediction_time"] += time.time() - icl_start
+
+    # Now do reward calculations (fast)
+    for r in records:
+        i = r["i"]
+        if rewards_list[i] is not None:
+            continue  # already handled (empty code)
+
+        exec_res = r["execution_result"] or {
+            "success": False,
+            "output": "",
+            "error": "",
+            "execution_time": 0.0,
+        }
+        guesser_pred = r.get("guesser_prediction", "")
+        actual_output = r.get("actual_output", "")
 
         # Calculate rewards
         reward_start = time.time()

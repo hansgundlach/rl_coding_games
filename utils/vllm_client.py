@@ -265,7 +265,11 @@ class VLLMClient:
             for attempt in range(self.max_retries):
                 try:
                     response = requests.post(
-                        f"{self.base_url}/v1/completions" if not self.base_url.rstrip("/").endswith("/v1") else f"{self.base_url}/completions",
+                        (
+                            f"{self.base_url}/v1/completions"
+                            if not self.base_url.rstrip("/").endswith("/v1")
+                            else f"{self.base_url}/completions"
+                        ),
                         json={
                             "model": "served-model",  # vLLM uses this placeholder
                             "prompt": prompt,
