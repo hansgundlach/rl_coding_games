@@ -19,13 +19,18 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import torch                                    # Can be slow
+import torch  # Can be slow
 import torch.nn.functional as F
-from datasets import Dataset                    # HuggingFace datasets
-from peft import LoraConfig, get_peft_model   # PEFT library 
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback  # 🔥 MAJOR CULPRIT
-from trl import GRPOConfig, GRPOTrainer       # 🔥 MAJOR CULPRIT  
-import wandb                                   # Can be slow
+from datasets import Dataset  # HuggingFace datasets
+from peft import LoraConfig, get_peft_model  # PEFT library
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    TrainerCallback,
+)  # 🔥 MAJOR CULPRIT
+from trl import GRPOConfig, GRPOTrainer  # 🔥 MAJOR CULPRIT
+import wandb  # Can be slow
+import re
 import time
 import sys
 import datetime
@@ -260,7 +265,9 @@ print("🧪 Setting up MBPP evaluator...")
 eval_config_dict = config.get("evaluation", {}).copy()
 
 # Debug: Print evaluation config
-print(f"📋 Evaluation config from YAML: temperature={eval_config_dict.get('temperature')}, do_sample={eval_config_dict.get('do_sample')}")
+print(
+    f"📋 Evaluation config from YAML: temperature={eval_config_dict.get('temperature')}, do_sample={eval_config_dict.get('do_sample')}"
+)
 
 # Remove keys not expected by EvalConfig constructor
 eval_config_dict.pop("enabled_initial", None)
@@ -271,7 +278,9 @@ eval_config_dict.pop("consistent_questions", None)
 
 # Create EvalConfig object from consolidated config
 eval_config = EvalConfig(**eval_config_dict)
-print(f"📋 Final EvalConfig: temperature={eval_config.temperature}, do_sample={eval_config.do_sample}")
+print(
+    f"📋 Final EvalConfig: temperature={eval_config.temperature}, do_sample={eval_config.do_sample}"
+)
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 

@@ -34,7 +34,7 @@ generation:
 
 # Training parameters
 training:
-  num_steps: 100
+  num_steps: 1000
   
   # Optimizer configuration
   optimizer: "AdamW"                # Changed from Adam to AdamW

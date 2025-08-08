@@ -68,7 +68,7 @@ grpo_config:
 
 # Training parameters
 training:
-  num_steps: 200                     # Total training steps
+  num_steps: 1000                     # Total training steps
   opponent_refresh_steps: 10        # Refresh frozen opponent every N steps
   games_per_step_v100: 2            # Conservative for V100 memory constraints
   games_per_step_other: 4           # Standard for A100+ GPUs

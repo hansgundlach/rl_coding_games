@@ -589,6 +589,14 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             # Extract player rewards
             p1_reward = trajectory.game_result.player_rewards.get(0, 0)
             p2_reward = trajectory.game_result.player_rewards.get(1, 0)
+            
+            # Debug: Check if rewards are unexpectedly -1.0
+            if p1_reward == -1.0 and p2_reward == -1.0:
+                print(f"🚨 DEBUG: Both players got -1.0 despite successful_submissions={trajectory.game_result.successful_submissions}")
+                print(f"   Player rewards dict: {trajectory.game_result.player_rewards}")
+                print(f"   Game data: {trajectory.game_result.game_data}")
+                if hasattr(trajectory.game_result, 'execution_logs'):
+                    print(f"   Execution logs: {trajectory.game_result.execution_logs[-5:]}")  # Last 5 logs
 
             # Determine winner and assign GRPO reward
             if p1_reward > p2_reward:
@@ -646,6 +654,15 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
                     print(f"   Features: {', '.join(features)}")
             else:
                 print(f"   ❌ Game failed: execution issues")
+                # Show the actual generated strategies to debug
+                p1_code = trajectory.player1_submission.extracted_code[:200]
+                p2_code = trajectory.player2_submission.extracted_code[:200]
+                print(f"   P1 strategy (first 200 chars): {p1_code}")
+                print(f"   P2 strategy (first 200 chars): {p2_code}")
+                
+                # Show execution logs if available
+                if hasattr(trajectory.game_result, 'execution_logs') and trajectory.game_result.execution_logs:
+                    print(f"   Execution logs: {trajectory.game_result.execution_logs[-3:]}")  # Last 3 logs
 
     print(
         f"🏆 Game results: {game_stats['player1_wins']} wins, {game_stats['player2_wins']} losses, {game_stats['ties']} ties"
