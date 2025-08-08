@@ -84,7 +84,7 @@ evaluation:
   enabled_interval: true
   eval_interval_steps: 10
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
-  num_questions: 40
+  num_questions: 20
   temperature: 0.0
   do_sample: false            # Required when temperature=0.0 for greedy decoding
   max_new_tokens: 512
@@ -101,28 +101,38 @@ wandb:
 
 # vLLM Configuration (optional)
 vllm:
-  enabled: false
+  enabled: true
   server:
     host: "127.0.0.1"
     port: 8000
-    gpu_memory_utilization: 0.85
+    gpu_memory_utilization: 0.7           # Safer for V100 16GB; raise if stable
     max_model_len: 2048
-    tensor_parallel_size: 1
-    max_num_batched_tokens: 4096
-    max_num_seqs: 128
+    tensor_parallel_size: 1               # One V100 per process
+    max_num_batched_tokens: 2048          # Keep conservative
+    max_num_seqs: 32
+    swap_space: 8                         # GB of host swap space for paging KV
+    dtype: "float16"                      # No bf16 on V100
+    trust_remote_code: true               # Needed for Qwen models
+    disable_log_requests: true
+    offline_mode: true
   client:
-    base_url: "http://127.0.0.1:8000"
-    timeout: 60
+    base_url: "http://127.0.0.1:8000"     # Root; client will add /v1
+    timeout: 90
     max_retries: 3
   generation:
     temperature: 0.8
     top_p: 0.9
     max_tokens: 512
+    presence_penalty: 0.0
+    frequency_penalty: 0.0
+    stop: null
   integration:
     use_for_grpo_completions: true
     use_for_evaluation: true
     log_performance_comparison: false
     auto_start_server: true
+    wait_for_server: 120                  # Give V100 slow boots time
+    fallback_to_hf: true
 
 # Debug Configuration
 debug:

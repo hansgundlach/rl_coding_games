@@ -40,6 +40,42 @@ class VLLMServerManager:
         self.server_process = None
         self.is_running = False
 
+    def _resolve_offline_model_path(self, model_path: str) -> str:
+        """Resolve a local snapshot path for a HF model id when offline.
+
+        Tries TRANSFORMERS_CACHE, HF_HOME, then ~/.cache/huggingface/hub.
+        Falls back to the provided model_path if nothing is found.
+        """
+        try:
+            if os.path.isdir(model_path):
+                return model_path
+
+            # Derive cache roots
+            transformers_cache = os.environ.get("TRANSFORMERS_CACHE")
+            hf_home = os.environ.get("HF_HOME")
+            default_hub = os.path.expanduser("~/.cache/huggingface/hub")
+
+            cache_roots = [p for p in [transformers_cache, hf_home, default_hub] if p]
+
+            # Convert model id to cache dir name
+            safe_model = model_path.replace("/", "--")
+            for root in cache_roots:
+                candidate = os.path.join(root, f"models--{safe_model}", "snapshots")
+                if os.path.isdir(candidate):
+                    # choose the most recent snapshot
+                    snapshots = [
+                        os.path.join(candidate, d)
+                        for d in os.listdir(candidate)
+                        if os.path.isdir(os.path.join(candidate, d))
+                    ]
+                    if snapshots:
+                        snapshots.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                        return snapshots[0]
+        except Exception:
+            pass
+
+        return model_path
+
     def start_server(self) -> bool:
         """Start vLLM server with offline support"""
         if not self.config.enabled:
@@ -64,43 +100,61 @@ class VLLMServerManager:
                 )
 
             # Build vLLM server command
+            model_arg = (
+                self._resolve_offline_model_path(self.model_path)
+                if self.offline_mode
+                else self.model_path
+            )
+
+            server_cfg = self.config.server
+            # sensible defaults for V100s / Supercloud
+            dtype = server_cfg.get("dtype", "float16")
+            swap_space = str(server_cfg.get("swap_space", 8))  # in GB
+            gpu_util = str(server_cfg.get("gpu_memory_utilization", 0.7))
+            max_len = str(server_cfg.get("max_model_len", 2048))
+            tp_size = str(server_cfg.get("tensor_parallel_size", 1))
+            max_batched_tokens = str(server_cfg.get("max_num_batched_tokens", 2048))
+            max_num_seqs = str(server_cfg.get("max_num_seqs", 32))
+            host = server_cfg.get("host", "127.0.0.1")
+            port = str(server_cfg.get("port", 8000))
+
             cmd = [
                 sys.executable,
                 "-m",
                 "vllm.entrypoints.openai.api_server",
                 "--model",
-                self.model_path,
+                model_arg,
                 "--host",
-                self.config.server["host"],
+                host,
                 "--port",
-                str(self.config.server["port"]),
+                port,
                 "--gpu-memory-utilization",
-                str(self.config.server["gpu_memory_utilization"]),
+                gpu_util,
                 "--max-model-len",
-                str(self.config.server["max_model_len"]),
+                max_len,
                 "--tensor-parallel-size",
-                str(self.config.server["tensor_parallel_size"]),
+                tp_size,
                 "--max-num-batched-tokens",
-                str(self.config.server["max_num_batched_tokens"]),
+                max_batched_tokens,
                 "--max-num-seqs",
-                str(self.config.server["max_num_seqs"]),
+                max_num_seqs,
                 "--swap-space",
-                str(self.config.server["swap_space"]),
+                swap_space,
                 "--dtype",
-                self.config.server["dtype"],
+                dtype,
+                "--served-model-name",
+                "served-model",
                 "--tokenizer-mode",
                 "auto",
             ]
 
             # Add offline mode flags
-            if self.config.server.get("offline_mode", True):
-                (
-                    cmd.extend(["--disable-log-requests"])
-                    if self.config.server.get("disable_log_requests")
-                    else None
-                )
+            if self.config.server.get("offline_mode", True) and self.config.server.get(
+                "disable_log_requests", True
+            ):
+                cmd.extend(["--disable-log-requests"])
 
-            if self.config.server.get("trust_remote_code"):
+            if self.config.server.get("trust_remote_code", True):
                 cmd.append("--trust-remote-code")
 
             logger.info(f"🚀 Starting vLLM server: {' '.join(cmd)}")
@@ -131,8 +185,9 @@ class VLLMServerManager:
 
     def _wait_for_server(self) -> bool:
         """Wait for server to be ready"""
-        base_url = self.config.client["base_url"]
-        timeout = self.config.integration["wait_for_server"]
+        base_url = self.config.client.get("base_url", "http://127.0.0.1:8000/v1")
+        # Wait up to 90s by default for cold start on V100s
+        timeout = int(self.config.integration.get("wait_for_server", 90))
 
         for i in range(timeout):
             try:
@@ -153,7 +208,7 @@ class VLLMServerManager:
             return False
 
         try:
-            base_url = self.config.client["base_url"]
+            base_url = self.config.client.get("base_url", "http://127.0.0.1:8000/v1")
             response = requests.get(f"{base_url}/health", timeout=2)
             return response.status_code == 200
         except:
@@ -178,9 +233,9 @@ class VLLMClient:
 
     def __init__(self, config: VLLMConfig):
         self.config = config
-        self.base_url = config.client["base_url"]
-        self.timeout = config.client["timeout"]
-        self.max_retries = config.client["max_retries"]
+        self.base_url = config.client.get("base_url", "http://127.0.0.1:8000/v1")
+        self.timeout = int(config.client.get("timeout", 60))
+        self.max_retries = int(config.client.get("max_retries", 3))
 
     def generate_completions(
         self, prompts: Union[str, List[str]], mode: str = "grpo_completions"
@@ -189,9 +244,20 @@ class VLLMClient:
         if isinstance(prompts, str):
             prompts = [prompts]
 
-        generation_config = self.config.generation.get(
-            mode, self.config.generation["grpo_completions"]
-        )
+        # Generation config: support either nested per-mode dicts, or flat keys
+        default_gen = {
+            "max_tokens": int(self.config.generation.get("max_tokens", 512)),
+            "temperature": float(self.config.generation.get("temperature", 0.8)),
+            "top_p": float(self.config.generation.get("top_p", 0.9)),
+            "frequency_penalty": float(
+                self.config.generation.get("frequency_penalty", 0.0)
+            ),
+            "presence_penalty": float(
+                self.config.generation.get("presence_penalty", 0.0)
+            ),
+            "stop": self.config.generation.get("stop", None),
+        }
+        generation_config = self.config.generation.get(mode, default_gen)
 
         completions = []
 
@@ -199,7 +265,7 @@ class VLLMClient:
             for attempt in range(self.max_retries):
                 try:
                     response = requests.post(
-                        f"{self.base_url}/completions",
+                        f"{self.base_url}/v1/completions" if not self.base_url.rstrip("/").endswith("/v1") else f"{self.base_url}/completions",
                         json={
                             "model": "served-model",  # vLLM uses this placeholder
                             "prompt": prompt,

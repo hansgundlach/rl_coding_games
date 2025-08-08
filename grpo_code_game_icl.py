@@ -44,6 +44,7 @@ import yaml
 import argparse
 from collections import deque
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 
 print("🚀 Starting GRPO Code Game with ICL Memory Opponent...")
 print("📋 Initializing components...")
@@ -1174,13 +1175,18 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
 def icl_enhanced_reward_function(completions, **kwargs):
     """
     ICL-enhanced reward function that plays games between generator and ICL guesser.
-    This is called by GRPO for each batch of completions.
+    CPU parallelism: parallelize the safe code execution step.
     """
     import time
+    import os
 
     step_start_time = time.time()
 
     print(f"🎮 Playing {len(completions)} games for reward calculation...")
+
+    # Optional: allow config-driven worker count
+    # Falls back to min(CPU cores, number of items to execute)
+    exec_num_workers = config.get("game", {}).get("exec_num_workers", None)
 
     rewards = []
     generator_wins = 0
@@ -1193,7 +1199,7 @@ def icl_enhanced_reward_function(completions, **kwargs):
     # Timing breakdown
     timing_stats = {
         "total_games_time": 0.0,
-        "code_execution_time": 0.0,
+        "code_execution_time": 0.0,  # wall-clock time for the parallel block
         "icl_prediction_time": 0.0,
         "reward_calculation_time": 0.0,
         "memory_update_time": 0.0,
@@ -1203,99 +1209,148 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
     games_start_time = time.time()
 
+    # Build per-completion records up front
+    records = []
+    empty_indices = []
     for i, completion in enumerate(completions):
+        code = extract_code_from_response(completion)
+        prediction = extract_prediction_from_response(completion)
+        rec = {
+            "i": i,
+            "completion": completion,
+            "code": code,
+            "generator_prediction": prediction,
+            "execution_result": None,
+            "guesser_prediction": None,
+            "actual_output": "",
+            "reward": None,
+            "error": "",
+        }
+        records.append(rec)
+
+        # Handle empty code early (no execution needed)
+        if not code:
+            empty_indices.append(i)
+
+    # Pre-fill outputs for empty-code cases
+    rewards_list = [None] * len(completions)
+    for i in empty_indices:
+        rewards_list[i] = -1.0
+        guesser_wins += 1
+        guesser_predictions[i] = "No code generated"
+        game_details[i] = {
+            "code": "",
+            "generator_prediction": records[i]["generator_prediction"],
+            "guesser_prediction": "No code generated",
+            "actual_output": "",
+            "execution_success": False,
+            "game_rewards": {"generator": -1.0, "guesser": -1.0},
+        }
+
+    # Indices to execute
+    exec_indices = [r["i"] for r in records if r["code"]]
+
+    # Parallel code execution
+    def _exec_one(idx):
+        r = records[idx]
         try:
-            # Extract code and prediction from completion
-            code = extract_code_from_response(completion)
-            prediction = extract_prediction_from_response(completion)
+            return idx, safe_execute_code(r["code"], config["game"]["timeout"])
+        except Exception as e:
+            return idx, {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "execution_time": 0.0,
+                "timeout": False,
+            }
 
-            if not code:
-                rewards.append(-1.0)
-                guesser_wins += 1
-                guesser_predictions[i] = "No code generated"
-                game_details[i] = {
-                    "code": code,
-                    "generator_prediction": prediction,
-                    "guesser_prediction": "No code generated",
-                    "actual_output": "",
-                    "execution_success": False,
-                    "game_rewards": {"generator": -1.0, "guesser": -1.0},
-                }
-                continue
+    if exec_indices:
+        wall_start = time.time()
+        # Determine workers
+        if exec_num_workers is None:
+            max_workers = min(len(exec_indices), (os.cpu_count() or 1))
+        else:
+            max_workers = max(1, min(int(exec_num_workers), len(exec_indices)))
 
-            # Execute the code
-            code_exec_start = time.time()
-            execution_result = safe_execute_code(code, config["game"]["timeout"])
-            timing_stats["code_execution_time"] += time.time() - code_exec_start
+        if max_workers > 1:
+            print(f"⚙️  Executing code in parallel with {max_workers} workers")
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                for idx, exec_res in pool.map(_exec_one, exec_indices):
+                    records[idx]["execution_result"] = exec_res
+        else:
+            for idx in exec_indices:
+                _, exec_res = _exec_one(idx)
+                records[idx]["execution_result"] = exec_res
 
-            actual_output = (
-                execution_result["output"] if execution_result["success"] else ""
-            )
+        timing_stats["code_execution_time"] += time.time() - wall_start
 
-            # Sample ICL opponent (80/20 mix)
-            icl_start = time.time()
+    # Now do guesser predictions (GPU) and reward calculation (sequential to avoid GPU contention)
+    for r in records:
+        i = r["i"]
+
+        if rewards_list[i] is not None:
+            # already handled (empty code)
+            continue
+
+        exec_res = r["execution_result"] or {
+            "success": False,
+            "output": "",
+            "error": "",
+            "execution_time": 0.0,
+        }
+        actual_output = exec_res["output"] if exec_res.get("success") else ""
+        r["actual_output"] = actual_output
+
+        # Sample ICL opponent and predict (GPU-bound; keep sequential)
+        icl_start = time.time()
+        try:
             opponent = sample_opponent(
                 generator_model, guesser_model, guesser_tokenizer, device, latest_memory
             )
-            guesser_prediction = opponent.predict_output(code)
-            timing_stats["icl_prediction_time"] += time.time() - icl_start
-            guesser_predictions[i] = guesser_prediction
-
-            # Calculate rewards
-            reward_start = time.time()
-            game_rewards = calculate_rewards(
-                execution_result, prediction, guesser_prediction, actual_output
-            )
-            timing_stats["reward_calculation_time"] += time.time() - reward_start
-            reward = game_rewards["generator"]
-            rewards.append(reward)
-
-            # Store detailed game info for debugging
-            game_details[i] = {
-                "code": code,
-                "generator_prediction": prediction,
-                "guesser_prediction": guesser_prediction,
-                "actual_output": actual_output,
-                "execution_success": execution_result["success"],
-                "execution_time": execution_result.get("execution_time", 0),
-                "execution_error": execution_result.get("error", ""),
-                "game_rewards": game_rewards,
-            }
-
-            # Track wins
-            if reward > 0:
-                generator_wins += 1
-
-                # Add to pending wins for ICL memory update
-                if (
-                    execution_result["success"]
-                    and game_rewards["generator_prediction_correct"]
-                ):
-                    if not hasattr(icl_enhanced_reward_function, "pending_wins"):
-                        icl_enhanced_reward_function.pending_wins = []
-                    icl_enhanced_reward_function.pending_wins.append(
-                        {
-                            "code": code,
-                            "expected_output": actual_output,
-                            "brief_rationale": "Generator won: code executed correctly and prediction was accurate",
-                        }
-                    )
-            else:
-                guesser_wins += 1
-
+            guesser_pred = opponent.predict_output(r["code"])
         except Exception as e:
-            print(f"Error in game {i}: {e}")
-            rewards.append(-1.0)
+            guesser_pred = f"Error: {str(e)}"
+        timing_stats["icl_prediction_time"] += time.time() - icl_start
+        r["guesser_prediction"] = guesser_pred
+        guesser_predictions[i] = guesser_pred
+
+        # Calculate rewards
+        reward_start = time.time()
+        game_rewards = calculate_rewards(
+            exec_res, r["generator_prediction"], guesser_pred, actual_output
+        )
+        timing_stats["reward_calculation_time"] += time.time() - reward_start
+
+        reward = game_rewards["generator"]
+        rewards_list[i] = reward
+
+        # Store detailed game info for debugging
+        game_details[i] = {
+            "code": r["code"],
+            "generator_prediction": r["generator_prediction"],
+            "guesser_prediction": guesser_pred,
+            "actual_output": actual_output,
+            "execution_success": exec_res.get("success", False),
+            "execution_time": exec_res.get("execution_time", 0),
+            "execution_error": exec_res.get("error", ""),
+            "game_rewards": game_rewards,
+        }
+
+        # Track wins and pending memory updates
+        if reward > 0:
+            generator_wins += 1
+            if exec_res.get("success") and game_rewards["generator_prediction_correct"]:
+                if not hasattr(icl_enhanced_reward_function, "pending_wins"):
+                    icl_enhanced_reward_function.pending_wins = []
+                icl_enhanced_reward_function.pending_wins.append(
+                    {
+                        "code": r["code"],
+                        "expected_output": actual_output,
+                        "brief_rationale": "Generator won: code executed correctly and prediction was accurate",
+                    }
+                )
+        else:
             guesser_wins += 1
-            guesser_predictions[i] = f"Error: {str(e)}"
-            game_details[i] = {
-                "code": code if "code" in locals() else "",
-                "generator_prediction": prediction if "prediction" in locals() else "",
-                "guesser_prediction": f"Error: {str(e)}",
-                "actual_output": "",
-                "execution_success": False,
-                "game_rewards": {"generator": -1.0, "guesser": -1.0},
-            }
 
     # Store for debug access
     icl_enhanced_reward_function._last_guesser_predictions = guesser_predictions
@@ -1313,7 +1368,6 @@ def icl_enhanced_reward_function(completions, **kwargs):
         and icl_enhanced_reward_function.pending_wins
         and icl_enhanced_reward_function.games_played % REFRESH_EVERY == 0
     ):
-
         print(
             f"🧠 Updating ICL memory with {len(icl_enhanced_reward_function.pending_wins)} new winning examples..."
         )
@@ -1353,19 +1407,18 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
         for i in range(min(show_detailed, len(completions))):
             completion = completions[i]
-            reward = rewards[i]
+            reward = rewards_list[i]
 
             print(f"\n🎮 Game {i+1}/{len(completions)} - Reward: {reward:+.2f}")
             print("-" * 60)
 
-            # Get detailed game info if available
+            # Get detailed game info if available, otherwise extract
             game_detail = game_details.get(i, {})
 
             if show_full_responses:
                 print(f"📝 RL GENERATOR FULL RESPONSE:")
                 print(f"```\n{completion}\n```")
 
-            # Use stored details if available, otherwise extract
             code = game_detail.get("code", extract_code_from_response(completion))
             generator_prediction = game_detail.get(
                 "generator_prediction", extract_prediction_from_response(completion)
@@ -1394,7 +1447,6 @@ def icl_enhanced_reward_function(completions, **kwargs):
                 if execution_success:
                     print(f"   Actual Output: '{actual_output}'")
 
-                    # Show prediction correctness
                     generator_correct = game_rewards_detail.get(
                         "generator_prediction_correct", False
                     )
@@ -1409,7 +1461,6 @@ def icl_enhanced_reward_function(completions, **kwargs):
                         f"📊 Guesser Prediction Correct: {'✅' if guesser_correct else '❌'}"
                     )
 
-                    # Show format validation results
                     output_format_valid = game_rewards_detail.get(
                         "output_format_valid", False
                     )
@@ -1429,16 +1480,6 @@ def icl_enhanced_reward_function(completions, **kwargs):
                     print(
                         f"📏 Guesser Format Valid: {'✅' if guess_format_valid else '❌'}"
                     )
-
-                    # Show winner
-                    if generator_correct and not guesser_correct:
-                        print(
-                            f"🏆 Winner: Generator (correct prediction, guesser wrong)"
-                        )
-                    elif guesser_correct:
-                        print(f"🏆 Winner: Guesser (correct prediction)")
-                    else:
-                        print(f"🏆 Winner: None (no correct predictions)")
                 else:
                     error_msg = execution_error[:200] + (
                         "..." if len(execution_error) > 200 else ""
@@ -1448,16 +1489,20 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
         print(f"{'='*80}")
 
-    # Calculate total timing
+    # Timing and logging
     timing_stats["total_games_time"] = time.time() - games_start_time
     total_step_time = time.time() - step_start_time
 
-    avg_reward = sum(rewards) / len(rewards) if rewards else 0.0
+    avg_reward = (
+        sum([r for r in rewards_list if r is not None]) / len(completions)
+        if completions
+        else 0.0
+    )
     print(
         f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {avg_reward:.2f}"
     )
 
-    # Get complete GRPO timing from callback if available
+    # Pull GRPO-wide timing if available (unchanged)
     grpo_generation_time = 0.0
     grpo_reward_time = 0.0
     grpo_weight_update_time = 0.0
@@ -1472,17 +1517,13 @@ def icl_enhanced_reward_function(completions, **kwargs):
             grpo_weight_update_time = step_data.get("weight_update_time", 0.0)
             grpo_complete_step_time = step_data.get("complete_step_time", 0.0)
 
-    # Calculate actual training time (this reward function execution is part of the training step)
-    actual_training_time = (
-        total_step_time  # This reward computation IS the training time
-    )
+    actual_training_time = total_step_time
     actual_weight_update_time = (
         grpo_complete_step_time - total_step_time
         if grpo_complete_step_time > 0
         else 0.0
     )
 
-    # Print detailed timing breakdown
     print(
         f"⏱️ DETAILED TIMING BREAKDOWN (step {getattr(icl_enhanced_reward_function, 'games_played', 0)}):"
     )
@@ -1504,7 +1545,6 @@ def icl_enhanced_reward_function(completions, **kwargs):
     )
     print(f"   Per game avg: {timing_stats['total_games_time']/len(completions):.3f}s")
 
-    # Print complete GRPO step breakdown if available
     if grpo_complete_step_time > 0:
         print(f"\n🏋️ COMPLETE GRPO STEP BREAKDOWN:")
         print(f"   Total GRPO step: {grpo_complete_step_time:.3f}s")
@@ -1517,15 +1557,12 @@ def icl_enhanced_reward_function(completions, **kwargs):
         print(
             f"   Weight update: {actual_weight_update_time:.3f}s ({actual_weight_update_time/grpo_complete_step_time*100:.1f}%)"
         )
-        print(
-            f"   Training efficiency: {actual_training_time/grpo_complete_step_time*100:.1f}% of time spent in actual training"
-        )
 
-    # Always show a quick summary of guesser predictions vs actual outputs
+    # Quick summary (unchanged)
     print(f"\n📊 Quick Game Summary:")
-    for i in range(min(5, len(completions))):  # Show up to 5 games
+    for i in range(min(5, len(completions))):
         detail = game_details.get(i, {})
-        actual = detail.get("actual_output", "")[:50]  # Truncate long outputs
+        actual = detail.get("actual_output", "")[:50]
         guesser_pred = detail.get("guesser_prediction", "")[:50]
         generator_pred = detail.get("generator_prediction", "")[:50]
         success = detail.get("execution_success", False)
@@ -1552,10 +1589,10 @@ def icl_enhanced_reward_function(completions, **kwargs):
             print(
                 f"   Game {i+1}: Code failed to execute | RL Generator='{generator_pred}' ❌ | ICL Guesser='{guesser_pred}' ❌"
             )
+
     if len(completions) > 5:
         print(f"   ... and {len(completions) - 5} more games")
 
-    # Log batch metrics to W&B if enabled
     if WANDB_ENABLED and wandb.run:
         wandb.log(
             {
@@ -1579,15 +1616,10 @@ def icl_enhanced_reward_function(completions, **kwargs):
                     if completions
                     else 0
                 ),
-                # Complete GRPO step timing
-                "timing/grpo_complete_step_time": grpo_complete_step_time,
-                "timing/grpo_generation_time": grpo_generation_time,
-                "timing/grpo_training_time": actual_training_time,
-                "timing/grpo_weight_update_time": actual_weight_update_time,
             }
         )
 
-    return rewards
+    return rewards_list
 
 
 # Replace the simple reward function with the ICL-enhanced one
