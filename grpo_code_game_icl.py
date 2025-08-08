@@ -86,6 +86,9 @@ def init_distributed():
         dist.init_process_group(backend="nccl")
         if torch.cuda.is_available():
             torch.cuda.set_device(local_rank)
+            print(
+                f"[Rank {rank}] Set CUDA device to: {torch.cuda.current_device()} ({torch.cuda.get_device_name()})"
+            )
 
         return {
             "rank": rank,
@@ -1116,6 +1119,9 @@ print(f"📥 Loading generator model: {generator_model_id}")
 gen_device_map = (
     {"": dist_info["local_rank"]} if dist_info["world_size"] > 1 else "auto"
 )
+print(
+    f"[Rank {dist_info['rank']}] Loading generator model on device_map: {gen_device_map}"
+)
 generator_model = AutoModelForCausalLM.from_pretrained(
     generator_model_id,
     torch_dtype=torch.float16,  # Use fp16
@@ -1123,6 +1129,9 @@ generator_model = AutoModelForCausalLM.from_pretrained(
     cache_dir=cache_dir,
     local_files_only=offline_mode,
     load_in_8bit=True,  # 8-bit quantization
+)
+print(
+    f"[Rank {dist_info['rank']}] Generator model loaded on device: {next(generator_model.parameters()).device}"
 )
 generator_tokenizer = AutoTokenizer.from_pretrained(
     generator_model_id, cache_dir=cache_dir, local_files_only=offline_mode
@@ -1139,6 +1148,9 @@ print(f"📥 Loading guesser model (frozen): {guesser_model_id}")
 guess_device_map = (
     {"": dist_info["local_rank"]} if dist_info["world_size"] > 1 else "auto"
 )
+print(
+    f"[Rank {dist_info['rank']}] Loading guesser model on device_map: {guess_device_map}"
+)
 guesser_model = AutoModelForCausalLM.from_pretrained(
     guesser_model_id,
     torch_dtype=torch.float16,
@@ -1146,6 +1158,9 @@ guesser_model = AutoModelForCausalLM.from_pretrained(
     cache_dir=cache_dir,
     local_files_only=offline_mode,
     load_in_8bit=True,  # 8-bit quantization
+)
+print(
+    f"[Rank {dist_info['rank']}] Guesser model loaded on device: {next(guesser_model.parameters()).device}"
 )
 guesser_tokenizer = AutoTokenizer.from_pretrained(
     guesser_model_id, cache_dir=cache_dir, local_files_only=offline_mode
@@ -1175,7 +1190,20 @@ print(generator_model.print_trainable_parameters())
 
 # Get device
 device = next(generator_model.parameters()).device
-print(f"Model device: {device}")
+print(f"[Rank {dist_info['rank']}] Final model device: {device}")
+
+# Add GPU memory usage summary for distributed verification
+if dist_info["world_size"] > 1 and torch.cuda.is_available():
+    print(
+        f"[Rank {dist_info['rank']}] GPU {dist_info['local_rank']} memory allocated: {torch.cuda.memory_allocated()/1024**3:.2f} GB"
+    )
+    print(
+        f"[Rank {dist_info['rank']}] GPU {dist_info['local_rank']} memory reserved: {torch.cuda.memory_reserved()/1024**3:.2f} GB"
+    )
+    if dist_info["is_main_process"]:
+        print(
+            f"🚀 DISTRIBUTED CONFIRMATION: Using {dist_info['world_size']} GPUs across {dist_info['world_size']} ranks"
+        )
 
 # Initialize vLLM integration if enabled
 vllm_config = config.get("vllm", {})
