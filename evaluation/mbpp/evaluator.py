@@ -63,6 +63,7 @@ class EvalConfig:
     # Parallel execution settings
     parallel_execution: bool = True
     num_workers: Optional[int] = None  # Defaults to number of CPU cores
+    batch_generation: bool = True  # Enable batch generation for faster evaluation
 
 
 class MBPPEvaluator:
@@ -375,6 +376,67 @@ class MBPPEvaluator:
         ).strip()
 
         return generated_text
+    
+    def _batch_generate_with_hf(self, prompts: List[str], model, tokenizer) -> List[str]:
+        """Batch generate text using HuggingFace model - MUCH faster than individual calls."""
+        if not prompts:
+            return []
+            
+        if len(prompts) == 1:
+            return [self._generate_with_hf(prompts[0], model, tokenizer)]
+        
+        # Batch tokenize all prompts
+        inputs = tokenizer(
+            prompts, return_tensors="pt", truncation=True, max_length=1024, padding=True
+        )
+
+        # Move to device
+        if torch.cuda.is_available():
+            inputs = {k: v.to(model.device) for k, v in inputs.items()}
+
+        # Prepare generation parameters with proper temperature/do_sample handling
+        generation_kwargs = {
+            "max_new_tokens": self.config.max_new_tokens,
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+        }
+        
+        # Handle temperature=0.0 case properly for newer transformers
+        if self.config.temperature == 0.0:
+            generation_kwargs["do_sample"] = False  # Greedy decoding
+            # Don't add temperature for greedy decoding
+        else:
+            generation_kwargs["temperature"] = self.config.temperature
+            generation_kwargs["do_sample"] = self.config.do_sample
+
+        # Batch generate for all prompts at once (HUGE SPEEDUP!)
+        with torch.no_grad():
+            outputs = model.generate(**inputs, **generation_kwargs)
+
+        # Decode all completions
+        generated_texts = []
+        for i, output in enumerate(outputs):
+            generated_text = tokenizer.decode(
+                output[inputs["input_ids"].shape[1]:], skip_special_tokens=True
+            ).strip()
+            generated_texts.append(generated_text)
+
+        logger.info(f"🚀 Batch generated {len(prompts)} MBPP completions in one GPU call!")
+        return generated_texts
+    
+    def _batch_generate_with_vllm(self, prompts: List[str]) -> List[str]:
+        """Batch generate text using vLLM server - even faster with proper batching."""
+        vllm_integration = get_vllm_integration()
+        if not vllm_integration:
+            raise RuntimeError("vLLM integration not available")
+
+        # vLLM already handles batching efficiently
+        completions = vllm_integration.generate_completions(
+            prompts, mode="mbpp_evaluation"
+        )
+        
+        logger.info(f"🚀 vLLM batch generated {len(prompts)} MBPP completions!")
+        return completions if completions else [""] * len(prompts)
 
     def evaluate_model(
         self, model, tokenizer, step: int = 0, phase: str = "eval"
@@ -410,36 +472,92 @@ class MBPPEvaluator:
             )
 
         # ------------------------------------------------------------------
-        # 1. Prompt construction & generation  (sequential, GPU-bound)
+        # 1. Prompt construction & batch generation (MUCH faster!)
         # ------------------------------------------------------------------
-        generation_records = []  # (problem, prompt, code, full_completion, test_cases)
-        for idx, problem in enumerate(problems):
-            if self.config.verbose:
-                logger.info(
-                    f"🔄 Generating completion for problem {idx + 1}/{len(problems)} (task_id={problem.get('task_id', 'unknown')})"
-                )
-
+        generation_start_time = time.time()
+        logger.info(f"🚀 Starting generation for {len(problems)} problems...")
+        
+        # Build all prompts at once
+        prompt_start = time.time()
+        prompts = []
+        for problem in problems:
             prompt = self.create_prompt(problem)
+            prompts.append(prompt)
+        prompt_time = time.time() - prompt_start
+        logger.info(f"📝 Built {len(prompts)} prompts in {prompt_time:.3f}s")
 
+        # Batch generate all completions (if enabled)
+        generated_texts = []
+        use_batch = self.config.batch_generation and len(problems) > 1
+        
+        if use_batch:
+            batch_start = time.time()
             try:
-                generated_text = (
-                    self._generate_with_vllm(prompt)
-                    if use_vllm
-                    else self._generate_with_hf(prompt, model, tokenizer)
-                )
+                if use_vllm:
+                    generated_texts = self._batch_generate_with_vllm(prompts)
+                else:
+                    generated_texts = self._batch_generate_with_hf(prompts, model, tokenizer)
+                
+                batch_time = time.time() - batch_start
+                avg_per_problem = batch_time / len(problems)
+                logger.info(f"🚀 BATCH GENERATION SUCCESS: {len(generated_texts)} completions in {batch_time:.3f}s ({avg_per_problem:.3f}s per problem)")
+                use_batch = True  # Success, don't fall back
+                    
             except Exception as e:
-                error_msg = str(e)
-                task_id = problem.get('task_id', 'unknown')
-                logger.error(f"Generation failed for task_id={task_id}: {error_msg}")
-                
-                # Provide specific guidance for common errors
-                if "temperature" in error_msg and "strictly positive" in error_msg:
-                    logger.error("💡 SOLUTION: Set 'do_sample: false' in config when using temperature=0.0 for greedy decoding")
-                elif "do_sample" in error_msg:
-                    logger.error("💡 SOLUTION: Check your generation config - ensure do_sample and temperature are compatible")
-                
-                generated_text = ""
+                batch_time = time.time() - batch_start
+                logger.error(f"❌ BATCH GENERATION FAILED after {batch_time:.3f}s: {e}")
+                logger.info("🔄 Falling back to individual generation...")
+                use_batch = False  # Fall back to individual
+        
+        # Individual generation (fallback or if batch disabled)
+        if not use_batch:
+            individual_start = time.time()
+            if not self.config.batch_generation:
+                logger.info("🔄 Using individual generation (batch disabled in config)")
+            
+            for idx, problem in enumerate(problems):
+                problem_start = time.time()
+                if self.config.verbose:
+                    logger.info(
+                        f"🔄 Generating completion for problem {idx + 1}/{len(problems)} (task_id={problem.get('task_id', 'unknown')})"
+                    )
 
+                prompt = prompts[idx]
+                try:
+                    generated_text = (
+                        self._generate_with_vllm(prompt)
+                        if use_vllm
+                        else self._generate_with_hf(prompt, model, tokenizer)
+                    )
+                    problem_time = time.time() - problem_start
+                    if self.config.verbose:
+                        logger.info(f"✅ Problem {idx + 1} completed in {problem_time:.3f}s")
+                except Exception as e:
+                    problem_time = time.time() - problem_start
+                    error_msg = str(e)
+                    task_id = problem.get('task_id', 'unknown')
+                    logger.error(f"❌ Problem {idx + 1} failed after {problem_time:.3f}s - task_id={task_id}: {error_msg}")
+                    
+                    # Provide specific guidance for common errors
+                    if "temperature" in error_msg and "strictly positive" in error_msg:
+                        logger.error("💡 SOLUTION: Set 'do_sample: false' in config when using temperature=0.0 for greedy decoding")
+                    elif "do_sample" in error_msg:
+                        logger.error("💡 SOLUTION: Check your generation config - ensure do_sample and temperature are compatible")
+                    
+                    generated_text = ""
+                
+                generated_texts.append(generated_text)
+            
+            individual_time = time.time() - individual_start
+            avg_per_problem = individual_time / len(problems)
+            logger.info(f"🔄 INDIVIDUAL GENERATION COMPLETE: {len(problems)} problems in {individual_time:.3f}s ({avg_per_problem:.3f}s per problem)")
+        
+        total_generation_time = time.time() - generation_start_time
+        logger.info(f"⚡ GENERATION PHASE COMPLETE: {total_generation_time:.3f}s total")
+
+        # Build generation records
+        generation_records = []
+        for problem, prompt, generated_text in zip(problems, prompts, generated_texts):
             code = self.extract_code(generated_text)
             test_cases = problem.get("test_list", [])
             generation_records.append(
@@ -449,6 +567,9 @@ class MBPPEvaluator:
         # ------------------------------------------------------------------
         # 2. Safe execution of generated code  (CPU-bound, parallel)
         # ------------------------------------------------------------------
+        execution_start_time = time.time()
+        logger.info(f"🔧 Starting code execution phase for {len(generation_records)} problems...")
+        
         if self.config.parallel_execution and len(generation_records) > 1:
             max_workers = self.config.num_workers or (os.cpu_count() or 1)
         else:
@@ -465,7 +586,12 @@ class MBPPEvaluator:
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 exec_results = list(pool.map(_exec_wrapper, generation_records))
         else:
+            logger.info("🔧 Executing test cases sequentially")
             exec_results = [_exec_wrapper(r) for r in generation_records]
+            
+        execution_time = time.time() - execution_start_time
+        avg_exec_time = execution_time / len(generation_records)
+        logger.info(f"⚡ EXECUTION PHASE COMPLETE: {execution_time:.3f}s total ({avg_exec_time:.3f}s per problem)")
 
         # ------------------------------------------------------------------
         # 3. Assemble results & metrics
@@ -545,10 +671,47 @@ class MBPPEvaluator:
 
         self.eval_history.append(eval_summary)
         
-        # Enhanced logging with failure breakdown
+        # ------------------------------------------------------------------
+        # 4. Final evaluation summary with comprehensive timing
+        # ------------------------------------------------------------------
+        summary_start_time = time.time()
+        
+        # Add timing breakdown to eval_summary
+        eval_summary.update({
+            "timing_breakdown": {
+                "total_eval_time": eval_time,
+                "generation_time": total_generation_time,
+                "execution_time": execution_time,
+                "batch_generation_used": use_batch,
+                "parallel_execution_used": max_workers > 1,
+                "num_workers": max_workers,
+                "avg_generation_per_problem": total_generation_time / len(problems) if problems else 0,
+                "avg_execution_per_problem": execution_time / len(problems) if problems else 0,
+            }
+        })
+        
+        # Enhanced logging with failure breakdown and detailed timing
         logger.info(
-            f"🏁 MBPP evaluation completed: {passed_count}/{total_problems} passed ({pass_rate:.3f}) in {eval_time:.1f}s"
+            f"🏁 MBPP EVALUATION COMPLETE: {passed_count}/{total_problems} passed ({pass_rate:.3f}) in {eval_time:.1f}s"
         )
+        
+        # Detailed timing breakdown log
+        logger.info("📊 TIMING BREAKDOWN:")
+        logger.info(f"   Generation: {total_generation_time:.3f}s ({100*total_generation_time/eval_time:.1f}%)")
+        logger.info(f"   Execution:  {execution_time:.3f}s ({100*execution_time/eval_time:.1f}%)")
+        other_time = eval_time - total_generation_time - execution_time
+        logger.info(f"   Other:      {other_time:.3f}s ({100*other_time/eval_time:.1f}%)")
+        
+        # Performance summary
+        if use_batch:
+            logger.info(f"⚡ BATCH GENERATION: Processed {len(problems)} problems in single GPU call")
+        else:
+            logger.info(f"🔄 INDIVIDUAL GENERATION: {len(problems)} sequential GPU calls")
+            
+        if max_workers > 1:
+            logger.info(f"⚡ PARALLEL EXECUTION: {max_workers} workers for test case verification")
+        else:
+            logger.info("🔧 SEQUENTIAL EXECUTION: Single-threaded test case verification")
         
         # Provide diagnostic information if there are many failures
         if passed_count == 0 and total_problems > 0:
@@ -561,107 +724,9 @@ class MBPPEvaluator:
         elif generation_failures > 0 or execution_failures > 0:
             logger.warning(f"📊 Failure breakdown: {generation_failures} generation failures, {execution_failures} execution failures")
 
-        return eval_summary
-
-        start_time = time.time()
-        problems = self.get_eval_problems()
-
-        # Check if vLLM should be used for evaluation
-        vllm_integration = get_vllm_integration()
-        use_vllm = (
-            vllm_integration
-            and vllm_integration.vllm_config.enabled
-            and vllm_integration.vllm_config.integration.get(
-                "use_for_evaluation", False
-            )
-        )
-
-        if use_vllm:
-            logger.info(
-                f"🚀 Running MBPP evaluation with vLLM at step {step} ({phase}) on {len(problems)} problems"
-            )
-        else:
-            logger.info(
-                f"Running MBPP evaluation with HuggingFace at step {step} ({phase}) on {len(problems)} problems"
-            )
-
-        results = []
-        passed_count = 0
-
-        for i, problem in enumerate(problems):
-            if self.config.verbose:
-                logger.info(
-                    f"Evaluating problem {i+1}/{len(problems)}: task_id={problem.get('task_id', 'unknown')}"
-                )
-
-            result = self.evaluate_single_problem(
-                problem, model, tokenizer, use_vllm=use_vllm
-            )
-            results.append(result)
-
-            if result["passed"]:
-                passed_count += 1
-
-            # Log progress
-            if self.config.verbose and i < 3:  # Show first few
-                logger.info(
-                    f"Problem {i+1} result: {'PASSED' if result['passed'] else 'FAILED'}"
-                )
-                if not result["passed"]:
-                    logger.info(
-                        f"Error: {result['execution_result'].get('error', 'unknown')}"
-                    )
-
-        # Calculate metrics
-        total_problems = len(problems)
-        pass_rate = passed_count / total_problems if total_problems > 0 else 0.0
-        eval_time = time.time() - start_time
-
-        eval_summary = {
-            "step": step,
-            "phase": phase,
-            "timestamp": time.time(),
-            "total_problems": total_problems,
-            "problems_passed": passed_count,
-            "pass_rate": pass_rate,
-            "eval_time_seconds": eval_time,
-            "config": {
-                "num_questions": self.config.num_questions,
-                "temperature": self.config.temperature,
-                "max_new_tokens": self.config.max_new_tokens,
-                "dataset_path": self.config.dataset_path,
-            },
-        }
-
-        # Save detailed results if enabled
-        if self.config.save_results:
-            timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-
-            # Save summary
-            summary_file = os.path.join(
-                self.config.results_dir,
-                f"mbpp_summary_step_{step}_{phase}_{timestamp_str}.json",
-            )
-            with open(summary_file, "w") as f:
-                json.dump(eval_summary, f, indent=2)
-
-            # Save detailed results
-            details_file = os.path.join(
-                self.config.results_dir,
-                f"mbpp_details_step_{step}_{phase}_{timestamp_str}.json",
-            )
-            with open(details_file, "w") as f:
-                json.dump(
-                    {"summary": eval_summary, "detailed_results": results}, f, indent=2
-                )
-
-        # Add to history
-        self.eval_history.append(eval_summary)
-
-        logger.info(
-            f"MBPP evaluation completed: {passed_count}/{total_problems} passed ({pass_rate:.3f}) in {eval_time:.1f}s"
-        )
-
+        summary_time = time.time() - summary_start_time
+        logger.info(f"📋 Summary processing: {summary_time:.3f}s")
+        
         return eval_summary
 
 

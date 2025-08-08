@@ -616,6 +616,7 @@ What list of numbers will this code output?
                 predictions.append("")
 
         print(f"🚀 Batch predicted {len(codes)} codes in one GPU call!")
+        print(f"🔍 BATCH DEBUG: First few predictions: {predictions[:3]}")
         return predictions
 
 
@@ -1623,7 +1624,7 @@ def icl_enhanced_reward_function(completions, **kwargs):
         f"🏆 Batch results: Generator {generator_wins}, Guesser {guesser_wins}, Avg reward: {avg_reward:.2f}"
     )
 
-    # Pull GRPO-wide timing if available (unchanged)
+    # Pull GRPO-wide timing if available with better debugging
     grpo_generation_time = 0.0
     grpo_reward_time = 0.0
     grpo_weight_update_time = 0.0
@@ -1631,12 +1632,26 @@ def icl_enhanced_reward_function(completions, **kwargs):
 
     if hasattr(grpo_timing_callback, "step_timings"):
         current_step = getattr(icl_enhanced_reward_function, "games_played", 0)
+        available_steps = list(grpo_timing_callback.step_timings.keys())
+        print(f"🔍 TIMING DEBUG: Looking for step {current_step}, available steps: {available_steps}")
+        
         if current_step in grpo_timing_callback.step_timings:
             step_data = grpo_timing_callback.step_timings[current_step]
             grpo_generation_time = step_data.get("generation_time", 0.0)
             grpo_reward_time = step_data.get("reward_computation_time", 0.0)
             grpo_weight_update_time = step_data.get("weight_update_time", 0.0)
             grpo_complete_step_time = step_data.get("complete_step_time", 0.0)
+            print(f"🔍 TIMING DEBUG: Found data for step {current_step}: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s")
+        else:
+            print(f"🔍 TIMING DEBUG: No data found for step {current_step}, trying most recent step")
+            if available_steps:
+                most_recent_step = max(available_steps)
+                step_data = grpo_timing_callback.step_timings[most_recent_step]
+                grpo_generation_time = step_data.get("generation_time", 0.0)
+                grpo_reward_time = step_data.get("reward_computation_time", 0.0)
+                grpo_weight_update_time = step_data.get("weight_update_time", 0.0)
+                grpo_complete_step_time = step_data.get("complete_step_time", 0.0)
+                print(f"🔍 TIMING DEBUG: Using step {most_recent_step} data: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s")
 
     actual_training_time = total_step_time
     actual_weight_update_time = (

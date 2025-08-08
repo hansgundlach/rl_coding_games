@@ -101,7 +101,7 @@ wandb:
 
 # vLLM Configuration (optional)
 vllm:
-  enabled: true
+  enabled: false
   server:
     host: "127.0.0.1"
     port: 8000
@@ -131,7 +131,7 @@ vllm:
     use_for_evaluation: true
     log_performance_comparison: false
     auto_start_server: true
-    wait_for_server: 120                  # Give V100 slow boots time
+    wait_for_server: 30                  # Give V100 slow boots time
     fallback_to_hf: true
 
 # Debug Configuration
