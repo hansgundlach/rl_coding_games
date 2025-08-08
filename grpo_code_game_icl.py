@@ -76,7 +76,9 @@ def init_distributed():
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
-        local_rank = int(os.environ.get("LOCAL_RANK", rank % max(torch.cuda.device_count(), 1)))
+        local_rank = int(
+            os.environ.get("LOCAL_RANK", rank % max(torch.cuda.device_count(), 1))
+        )
 
         print(f"[Rank {rank}] Initializing distributed training...")
         print(f"[Rank {rank}] World size: {world_size}, Local rank: {local_rank}")
@@ -1728,9 +1730,9 @@ def icl_enhanced_reward_function(completions, **kwargs):
             grpo_reward_time = step_data.get("reward_computation_time", 0.0)
             grpo_weight_update_time = step_data.get("weight_update_time", 0.0)
             grpo_complete_step_time = step_data.get("complete_step_time", 0.0)
-                print(
-                    f"🔍 TIMING DEBUG: Found data for step {current_step}: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s"
-                )
+            print(
+                f"🔍 TIMING DEBUG: Found data for step {current_step}: gen={grpo_generation_time:.1f}s, reward={grpo_reward_time:.1f}s, weight={grpo_weight_update_time:.1f}s, total={grpo_complete_step_time:.1f}s"
+            )
         else:
             print(
                 f"🔍 TIMING DEBUG: No data found for step {current_step}, trying most recent step"
