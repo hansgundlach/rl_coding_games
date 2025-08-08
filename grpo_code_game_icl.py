@@ -1115,8 +1115,10 @@ if vllm_config.get("enabled", False):
     from utils.vllm_client import initialize_vllm_integration
 
     try:
+        # Use vllm_path if available for better offline support
+        vllm_model_path = config["generator_model"].get("vllm_path", generator_model_id)
         vllm_integration = initialize_vllm_integration(
-            vllm_config, generator_model_id, offline_mode
+            vllm_config, vllm_model_path, offline_mode
         )
 
         if vllm_integration.initialize():

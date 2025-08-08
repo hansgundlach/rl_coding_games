@@ -146,6 +146,8 @@ class VLLMServerManager:
                 "served-model",
                 "--tokenizer-mode",
                 "auto",
+                "--load-format",
+                "auto",
             ]
 
             # Add offline mode flags
