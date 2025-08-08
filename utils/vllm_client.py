@@ -148,6 +148,11 @@ class VLLMServerManager:
                 "auto",
                 "--load-format",
                 "auto",
+                "--enforce-eager",
+                "--disable-log-stats",
+                "--enable-reasoning",
+                "--reasoning-parser",
+                "qwen3",
             ]
 
             # Add offline mode flags
