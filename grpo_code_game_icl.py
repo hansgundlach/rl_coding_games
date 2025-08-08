@@ -19,14 +19,13 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import torch
+import torch                                    # Can be slow
 import torch.nn.functional as F
-from datasets import Dataset
-from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
-from trl import GRPOConfig, GRPOTrainer
-import re
-import wandb
+from datasets import Dataset                    # HuggingFace datasets
+from peft import LoraConfig, get_peft_model   # PEFT library 
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback  # 🔥 MAJOR CULPRIT
+from trl import GRPOConfig, GRPOTrainer       # 🔥 MAJOR CULPRIT  
+import wandb                                   # Can be slow
 import time
 import sys
 import datetime
