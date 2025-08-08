@@ -86,6 +86,7 @@ evaluation:
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   num_questions: 40
   temperature: 0.0
+  do_sample: false            # Required when temperature=0.0 for greedy decoding
   max_new_tokens: 512
   timeout_seconds: 10
   results_dir: "./eval_results"

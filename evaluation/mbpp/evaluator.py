@@ -346,16 +346,24 @@ class MBPPEvaluator:
         if torch.cuda.is_available():
             inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
+        # Prepare generation parameters with proper temperature/do_sample handling
+        generation_kwargs = {
+            "max_new_tokens": self.config.max_new_tokens,
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+        }
+        
+        # Handle temperature=0.0 case properly for newer transformers
+        if self.config.temperature == 0.0:
+            generation_kwargs["do_sample"] = False  # Greedy decoding
+            # Don't add temperature for greedy decoding
+        else:
+            generation_kwargs["temperature"] = self.config.temperature
+            generation_kwargs["do_sample"] = self.config.do_sample
+
         # Generate
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=self.config.max_new_tokens,
-                temperature=self.config.temperature,
-                do_sample=self.config.do_sample,
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+            outputs = model.generate(**inputs, **generation_kwargs)
 
         # Decode
         generated_text = tokenizer.decode(
@@ -416,9 +424,16 @@ class MBPPEvaluator:
                     else self._generate_with_hf(prompt, model, tokenizer)
                 )
             except Exception as e:
-                logger.error(
-                    f"Generation failed for task_id={problem.get('task_id')}: {e}"
-                )
+                error_msg = str(e)
+                task_id = problem.get('task_id', 'unknown')
+                logger.error(f"Generation failed for task_id={task_id}: {error_msg}")
+                
+                # Provide specific guidance for common errors
+                if "temperature" in error_msg and "strictly positive" in error_msg:
+                    logger.error("💡 SOLUTION: Set 'do_sample: false' in config when using temperature=0.0 for greedy decoding")
+                elif "do_sample" in error_msg:
+                    logger.error("💡 SOLUTION: Check your generation config - ensure do_sample and temperature are compatible")
+                
                 generated_text = ""
 
             code = self.extract_code(generated_text)
@@ -453,9 +468,19 @@ class MBPPEvaluator:
         # ------------------------------------------------------------------
         results = []
         passed_count = 0
+        generation_failures = 0
+        execution_failures = 0
+        
         for record, exec_result in zip(generation_records, exec_results):
             problem, prompt, code, full_completion, _tests = record
             passed = exec_result.get("success", False)
+            
+            # Track failure types for better diagnostics
+            if not full_completion:  # Generation failed
+                generation_failures += 1
+            elif not passed:  # Generation succeeded but execution failed
+                execution_failures += 1
+            
             results.append(
                 {
                     "task_id": problem.get("task_id", 0),
@@ -515,9 +540,22 @@ class MBPPEvaluator:
                 logger.error(f"Failed to save evaluation results: {e}")
 
         self.eval_history.append(eval_summary)
+        
+        # Enhanced logging with failure breakdown
         logger.info(
             f"🏁 MBPP evaluation completed: {passed_count}/{total_problems} passed ({pass_rate:.3f}) in {eval_time:.1f}s"
         )
+        
+        # Provide diagnostic information if there are many failures
+        if passed_count == 0 and total_problems > 0:
+            logger.error("🚨 ALL EVALUATIONS FAILED - DIAGNOSTIC INFORMATION:")
+            logger.error(f"   Generation failures: {generation_failures}/{total_problems}")
+            logger.error(f"   Execution failures: {execution_failures}/{total_problems}")
+            if generation_failures > 0:
+                logger.error("   💡 Check your evaluation config - ensure temperature/do_sample compatibility")
+                logger.error(f"   💡 Current config: temperature={self.config.temperature}, do_sample={getattr(self.config, 'do_sample', 'not set')}")
+        elif generation_failures > 0 or execution_failures > 0:
+            logger.warning(f"📊 Failure breakdown: {generation_failures} generation failures, {execution_failures} execution failures")
 
         return eval_summary
 
