@@ -62,7 +62,7 @@ training:
 evaluation:
   enabled: true
   enabled_initial: true       # Run evaluation before training
-  enabled_final: true         # Run evaluation after training  
+  enabled_final: true         # Run evaluation after training  a
   enabled_interval: true      # Run evaluation during training
   eval_interval_steps: 10     # Run evaluation every N steps
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)

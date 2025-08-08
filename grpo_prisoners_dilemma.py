@@ -649,8 +649,10 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     ):
         # Extract and validate player 1 strategy (main model)
         p1_extracted_code = game_env.extract_code_from_response(main_completion)
-        p1_is_valid, p1_error_msg = game_env.validate_submission(p1_extracted_code, 0, "player")
-        
+        p1_is_valid, p1_error_msg = game_env.validate_submission(
+            p1_extracted_code, 0, "player"
+        )
+
         player1_sub = PlayerSubmission(
             player_id=0,
             role="player",
@@ -660,11 +662,13 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             compilation_success=p1_is_valid,
             compilation_error=p1_error_msg if not p1_is_valid else None,
         )
-        
-        # Extract and validate player 2 strategy (opponent model)  
+
+        # Extract and validate player 2 strategy (opponent model)
         p2_extracted_code = game_env.extract_code_from_response(opp_completion)
-        p2_is_valid, p2_error_msg = game_env.validate_submission(p2_extracted_code, 1, "player")
-        
+        p2_is_valid, p2_error_msg = game_env.validate_submission(
+            p2_extracted_code, 1, "player"
+        )
+
         player2_sub = PlayerSubmission(
             player_id=1,
             role="player",
@@ -674,7 +678,7 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             compilation_success=p2_is_valid,
             compilation_error=p2_error_msg if not p2_is_valid else None,
         )
-        
+
         # Create a fresh copy of game_env for each game to avoid threading issues
         game_env_copy = copy.deepcopy(game_env)
         strategy_pairs.append((player1_sub, player2_sub, game_env_copy, i))
@@ -867,6 +871,75 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
     print(
         f"💥 Execution failures: {game_stats['execution_failures']}/{len(completions)}"
     )
+
+    # Print both players' strategies for one game per iteration
+    if len(trajectories) > 0:
+        print(f"\n{'='*80}")
+        print(
+            f"🎮 BOTH PLAYERS' STRATEGIES FOR GAME 1 (Step {reward_state.call_count})"
+        )
+        print(f"{'='*80}")
+
+        # Get first game details
+        trajectory = trajectories[0]
+        reward = rewards[0]
+
+        print(f"🎯 Game Reward: {reward:+.2f}")
+        print(
+            f"🔧 Game Success: {'✅' if trajectory.game_result.successful_submissions > 0 else '❌'}"
+        )
+
+        if trajectory.game_result.successful_submissions > 0:
+            p1_reward = trajectory.game_result.player_rewards.get(0, 0)
+            p2_reward = trajectory.game_result.player_rewards.get(1, 0)
+            print(f"📊 Player Scores: P1={p1_reward}, P2={p2_reward}")
+
+        # Show Player 1 strategy (main model)
+        p1_code = trajectory.player1_submission.extracted_code
+        p1_compilation = (
+            "✅ Valid"
+            if trajectory.player1_submission.compilation_success
+            else "❌ Invalid"
+        )
+        print(f"\n🤖 PLAYER 1 (Main Model) Strategy:")
+        print(f"🔧 Compilation: {p1_compilation}")
+        if not trajectory.player1_submission.compilation_success:
+            print(f"❌ Error: {trajectory.player1_submission.compilation_error}")
+        print(f"```python\n{p1_code}\n```")
+
+        # Show Player 2 strategy (opponent model)
+        p2_code = trajectory.player2_submission.extracted_code
+        p2_compilation = (
+            "✅ Valid"
+            if trajectory.player2_submission.compilation_success
+            else "❌ Invalid"
+        )
+        print(f"\n🥶 PLAYER 2 (Frozen Opponent) Strategy:")
+        print(f"🔧 Compilation: {p2_compilation}")
+        if not trajectory.player2_submission.compilation_success:
+            print(f"❌ Error: {trajectory.player2_submission.compilation_error}")
+        print(f"```python\n{p2_code}\n```")
+
+        # Show game features if any
+        game_data = trajectory.game_result.game_data
+        features = []
+        if game_data.get("wsls_bot_used", False):
+            features.append("🤖 WSLS Bot")
+        if game_data.get("noise_rounds", 0) > 0:
+            features.append(f"🎲 Noise ({game_data['noise_rounds']} rounds)")
+        if features:
+            print(f"\n🎮 Game Features: {', '.join(features)}")
+
+        # Show execution logs if available
+        if (
+            hasattr(trajectory.game_result, "execution_logs")
+            and trajectory.game_result.execution_logs
+        ):
+            print(f"\n📝 Execution Logs (last 5):")
+            for log in trajectory.game_result.execution_logs[-5:]:
+                print(f"   {log}")
+
+        print(f"{'='*80}")
 
     return rewards
 
