@@ -104,7 +104,7 @@ def apply_config_overrides(config, override_args):
         keys = key.split(".")
         current = config
 
-        # Validate that the config path exists (except for the final key)
+        # Validate that the config path existsx (except for the final key)
         for i, k in enumerate(keys[:-1]):
             if k not in current:
                 print(f"❌ ERROR: Invalid config override path '{key}'")
@@ -573,9 +573,13 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
                 outputs = opponent_model.generate(**inputs, **generation_kwargs)
 
             # Decode all opponent completions
+            # Fix: Use attention mask to get actual input lengths for each sequence
+            input_lengths = inputs["attention_mask"].sum(dim=1).tolist()
+
             for i, output in enumerate(outputs):
+                start = input_lengths[i]  # Actual length of this specific prompt
                 opponent_text = tokenizer.decode(
-                    output[inputs["input_ids"].shape[1] :], skip_special_tokens=True
+                    output[start:], skip_special_tokens=True
                 ).strip()
                 opponent_completions.append(opponent_text)
 
@@ -709,13 +713,16 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
 
     # Calculate rewards
     for trajectory in trajectories:
-        # Check if game was successful based on successful_submissions
-        game_successful = trajectory.game_result.successful_submissions > 0
+        # Check individual compilation success for each player
+        p1_compilation_success = trajectory.player1_submission.compilation_success
+        p2_compilation_success = trajectory.player2_submission.compilation_success
 
-        if game_successful:
+        # Determine reward based on compilation success and game outcome
+        if p1_compilation_success and p2_compilation_success:
+            # Both players have valid code - play the game normally
             game_stats["successful_games"] += 1
 
-            # Extract player rewards
+            # Extract player rewards from game result
             p1_reward = trajectory.game_result.player_rewards.get(0, 0)
             p2_reward = trajectory.game_result.player_rewards.get(1, 0)
 
@@ -733,7 +740,7 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
                         f"   Execution logs: {trajectory.game_result.execution_logs[-5:]}"
                     )  # Last 5 logs
 
-            # Determine winner and assign GRPO reward
+            # Determine winner and assign GRPO reward (for main model)
             if p1_reward > p2_reward:
                 reward = 1.0  # Main model wins
                 game_stats["player1_wins"] += 1
@@ -751,10 +758,25 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             if game_data.get("noise_rounds", 0) > 0:
                 game_stats["games_with_noise"] += 1
 
-        else:
-            # Code execution failure - negative reward
-            reward = -1.0
+        elif not p1_compilation_success and not p2_compilation_success:
+            # Both players have invalid code - both get penalized
+            reward = -1.0  # Main model gets penalized for its own failure
             game_stats["execution_failures"] += 1
+            game_stats["both_players_failed"] = (
+                game_stats.get("both_players_failed", 0) + 1
+            )
+
+        elif not p1_compilation_success:
+            # Only main model (Player 1) has invalid code
+            reward = -1.0  # Main model gets penalized for its own failure
+            game_stats["execution_failures"] += 1
+            game_stats["player1_failed"] = game_stats.get("player1_failed", 0) + 1
+
+        else:  # not p2_compilation_success
+            # Only opponent (Player 2) has invalid code
+            reward = 0.0  # Main model gets neutral reward, opponent gets penalized
+            game_stats["execution_failures"] += 1
+            game_stats["player2_failed"] = game_stats.get("player2_failed", 0) + 1
 
         rewards.append(reward)
 
@@ -835,7 +857,12 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
             reward = rewards[i]
             print(f"\n🎮 Game {i+1}: Reward = {reward:+.1f}")
 
-            if trajectory.game_result.successful_submissions > 0:
+            # Check compilation status
+            p1_compilation = trajectory.player1_submission.compilation_success
+            p2_compilation = trajectory.player2_submission.compilation_success
+
+            if p1_compilation and p2_compilation:
+                # Both players have valid code
                 p1_reward = trajectory.game_result.player_rewards[0]
                 p2_reward = trajectory.game_result.player_rewards[1]
                 print(f"   Player scores: P1={p1_reward}, P2={p2_reward}")
@@ -849,12 +876,29 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
                 if features:
                     print(f"   Features: {', '.join(features)}")
             else:
-                print(f"   ❌ Game failed: execution issues")
+                # Show compilation failure details
+                if not p1_compilation and not p2_compilation:
+                    print(f"   ❌ Both players failed compilation")
+                elif not p1_compilation:
+                    print(f"   ❌ Player 1 (main model) failed compilation")
+                else:
+                    print(f"   ❌ Player 2 (opponent) failed compilation")
+
                 # Show the actual generated strategies to debug
                 p1_code = trajectory.player1_submission.extracted_code[:200]
                 p2_code = trajectory.player2_submission.extracted_code[:200]
                 print(f"   P1 strategy (first 200 chars): {p1_code}")
                 print(f"   P2 strategy (first 200 chars): {p2_code}")
+
+                # Show compilation errors
+                if not p1_compilation:
+                    print(
+                        f"   P1 compilation error: {trajectory.player1_submission.compilation_error}"
+                    )
+                if not p2_compilation:
+                    print(
+                        f"   P2 compilation error: {trajectory.player2_submission.compilation_error}"
+                    )
 
                 # Show execution logs if available
                 if (
@@ -872,6 +916,23 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         f"💥 Execution failures: {game_stats['execution_failures']}/{len(completions)}"
     )
 
+    # Show detailed failure breakdown if any failures occurred
+    if game_stats["execution_failures"] > 0:
+        p1_failures = game_stats.get("player1_failed", 0)
+        p2_failures = game_stats.get("player2_failed", 0)
+        both_failures = game_stats.get("both_players_failed", 0)
+
+        failure_details = []
+        if p1_failures > 0:
+            failure_details.append(f"P1 failed: {p1_failures}")
+        if p2_failures > 0:
+            failure_details.append(f"P2 failed: {p2_failures}")
+        if both_failures > 0:
+            failure_details.append(f"Both failed: {both_failures}")
+
+        if failure_details:
+            print(f"   📊 Failure breakdown: {', '.join(failure_details)}")
+
     # Print both players' strategies for one game per iteration
     if len(trajectories) > 0:
         print(f"\n{'='*80}")
@@ -885,14 +946,22 @@ def prisoners_dilemma_reward_function(completions, **kwargs):
         reward = rewards[0]
 
         print(f"🎯 Game Reward: {reward:+.2f}")
-        print(
-            f"🔧 Game Success: {'✅' if trajectory.game_result.successful_submissions > 0 else '❌'}"
-        )
 
-        if trajectory.game_result.successful_submissions > 0:
+        # Check compilation status for detailed reporting
+        p1_compilation = trajectory.player1_submission.compilation_success
+        p2_compilation = trajectory.player2_submission.compilation_success
+
+        if p1_compilation and p2_compilation:
+            print(f"🔧 Game Success: ✅ Both players compiled successfully")
             p1_reward = trajectory.game_result.player_rewards.get(0, 0)
             p2_reward = trajectory.game_result.player_rewards.get(1, 0)
             print(f"📊 Player Scores: P1={p1_reward}, P2={p2_reward}")
+        elif not p1_compilation and not p2_compilation:
+            print(f"🔧 Game Success: ❌ Both players failed compilation")
+        elif not p1_compilation:
+            print(f"🔧 Game Success: ❌ Player 1 (main model) failed compilation")
+        else:
+            print(f"🔧 Game Success: ❌ Player 2 (opponent) failed compilation")
 
         # Show Player 1 strategy (main model)
         p1_code = trajectory.player1_submission.extracted_code
