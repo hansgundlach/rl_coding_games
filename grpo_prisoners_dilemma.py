@@ -1090,6 +1090,12 @@ if platform_info["gpu_type"] == "V100":
     )
     print("🔧 Adjusted training args for V100 memory constraints")
 
+# Override GRPO max_steps with training.num_steps
+training_args["max_steps"] = config["training"]["num_steps"]
+print(
+    f"🔧 Set GRPO max_steps to {config['training']['num_steps']} (from training.num_steps)"
+)
+
 # Fix model config path for GRPOTrainer if in offline mode
 if offline_mode:
     # Point the model config to actual cached snapshot directory so GRPOTrainer can find tokenizer files locally
