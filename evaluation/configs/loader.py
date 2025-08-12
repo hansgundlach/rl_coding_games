@@ -125,6 +125,15 @@ def load_env_overrides() -> Dict[str, Any]:
         ),
         "MBPP_RESULTS_DIR": ("results_dir", str),
         "MBPP_VERBOSE": ("verbose", lambda x: x.lower() in ["true", "1", "yes"]),
+        # New batch settings
+        "MBPP_MAX_BATCH_SIZE": (
+            "max_batch_size",
+            lambda x: int(x) if x.lower() != "null" else None,
+        ),
+        "MBPP_ADAPTIVE_BATCHING": (
+            "adaptive_batching",
+            lambda x: x.lower() in ["true", "1", "yes"],
+        ),
     }
 
     for env_var, (config_key, converter) in env_mappings.items():
