@@ -5,6 +5,15 @@
 model:
   id: "Qwen/Qwen3-1.7B"
   cache_dir: "./model_cache"
+  
+  # Quantization settings (optional - for memory efficiency)
+  quantization:
+    enabled: false              # Enable quantization with bitsandbytes
+    load_in_4bit: false         # Use 4-bit quantization (QLoRA style)
+    load_in_8bit: false         # Use 8-bit quantization
+    bnb_4bit_compute_dtype: "float16"  # Compute dtype for 4-bit quantization
+    bnb_4bit_use_double_quant: true    # Use double quantization for 4-bit
+    bnb_4bit_quant_type: "nf4"         # Quantization type: "nf4" or "fp4"
 
 # Random seed configuration for reproducible experiments
 seed: 42  # Global seed for all random number generators

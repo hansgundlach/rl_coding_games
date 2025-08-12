@@ -25,7 +25,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import GRPOConfig, GRPOTrainer  # type: ignore
 import re
 import wandb
@@ -419,13 +419,59 @@ os.makedirs(cache_dir, exist_ok=True)
 model_id = config["model"]["id"]
 print(f"📥 Using model from config: {model_id}")
 
-main_model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    torch_dtype="auto",
-    device_map="auto",
-    cache_dir=cache_dir,
-    local_files_only=offline_mode,
-)
+# Set up quantization if enabled
+quantization_config = None
+if config["model"].get("quantization", {}).get("enabled", False):
+    print("🔧 Setting up quantization with bitsandbytes...")
+    quantization_settings = config["model"]["quantization"]
+
+    # Validate quantization settings
+    if quantization_settings.get("load_in_4bit", False) and quantization_settings.get(
+        "load_in_8bit", False
+    ):
+        raise ValueError(
+            "Cannot enable both 4-bit and 8-bit quantization simultaneously"
+        )
+
+    if not quantization_settings.get(
+        "load_in_4bit", False
+    ) and not quantization_settings.get("load_in_8bit", False):
+        raise ValueError(
+            "Quantization enabled but neither 4-bit nor 8-bit quantization specified"
+        )
+
+    # Create BitsAndBytesConfig
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=quantization_settings.get("load_in_4bit", False),
+        load_in_8bit=quantization_settings.get("load_in_8bit", False),
+        bnb_4bit_compute_dtype=getattr(
+            torch, quantization_settings.get("bnb_4bit_compute_dtype", "float16")
+        ),
+        bnb_4bit_use_double_quant=quantization_settings.get(
+            "bnb_4bit_use_double_quant", True
+        ),
+        bnb_4bit_quant_type=quantization_settings.get("bnb_4bit_quant_type", "nf4"),
+    )
+
+    print(
+        f"✅ Quantization config: 4-bit={quantization_settings.get('load_in_4bit', False)}, "
+        f"8-bit={quantization_settings.get('load_in_8bit', False)}"
+    )
+else:
+    print("📦 Loading model without quantization")
+
+# Load model with optional quantization
+model_kwargs = {
+    "torch_dtype": "auto",
+    "device_map": "auto",
+    "cache_dir": cache_dir,
+    "local_files_only": offline_mode,
+}
+
+if quantization_config is not None:
+    model_kwargs["quantization_config"] = quantization_config
+
+main_model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
 tokenizer = AutoTokenizer.from_pretrained(
     model_id, cache_dir=cache_dir, local_files_only=offline_mode
 )
@@ -440,12 +486,32 @@ print(
 
 # Add LoRA for efficient training
 print("🔧 Setting up LoRA configuration...")
-lora_config = LoraConfig(
-    task_type=config["lora"]["task_type"],
-    r=config["lora"]["r"],
-    lora_alpha=config["lora"]["lora_alpha"],
-    target_modules=config["lora"]["target_modules"],
-)
+
+# Check if we're using 4-bit quantization (QLoRA)
+is_4bit_quantized = config["model"].get("quantization", {}).get(
+    "enabled", False
+) and config["model"]["quantization"].get("load_in_4bit", False)
+
+if is_4bit_quantized:
+    print("🔧 Using QLoRA configuration for 4-bit quantization...")
+    # QLoRA requires specific settings
+    lora_config = LoraConfig(
+        task_type=config["lora"]["task_type"],
+        r=config["lora"]["r"],
+        lora_alpha=config["lora"]["lora_alpha"],
+        target_modules=config["lora"]["target_modules"],
+        # QLoRA specific settings
+        inference_mode=False,
+        bias="none",
+    )
+else:
+    print("🔧 Using standard LoRA configuration...")
+    lora_config = LoraConfig(
+        task_type=config["lora"]["task_type"],
+        r=config["lora"]["r"],
+        lora_alpha=config["lora"]["lora_alpha"],
+        target_modules=config["lora"]["target_modules"],
+    )
 
 main_model = get_peft_model(main_model, lora_config)
 main_model.print_trainable_parameters()
