@@ -5,7 +5,7 @@
 #SBATCH --partition=xeon-g6-volta
 #SBATCH --gres=gpu:volta:1
 #SBATCH --nodes=1
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=12:00:00
 
 # MIT Supercloud SLURM script for GRPO Prisoner's Dilemma Training
@@ -91,10 +91,22 @@ echo "🎮 GPU Information:"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits
 echo ""
 
-# Memory information
-echo "💾 Memory Information:"
+# Memory monitoring before training
+echo "💾 Pre-training Memory Status:"
+echo "System Memory:"
 free -h
 echo ""
+echo "GPU Memory:"
+nvidia-smi --query-gpu=memory.used,memory.total,memory.free --format=csv,noheader,nounits
+echo ""
+
+# Check if we have enough memory for large evaluations
+if echo "$CONFIG_OVERRIDES" | grep -q "evaluation.num_questions=200"; then
+    echo "⚠️  WARNING: Large evaluation (200 questions) detected!"
+    echo "💡 Consider using quantization to reduce memory usage:"
+    echo "   --model.quantization.enabled=true --model.quantization.load_in_4bit=true"
+    echo ""
+fi
 
 # Python and package versions
 echo "📦 Environment Information:"
