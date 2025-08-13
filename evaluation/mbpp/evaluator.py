@@ -60,12 +60,12 @@ class EvalConfig:
     save_results: bool = True
     results_dir: str = "./eval_results"
     verbose: bool = True
-    
+
     # Parallel execution settings
     parallel_execution: bool = True
     num_workers: Optional[int] = None  # Defaults to number of CPU cores
     batch_generation: bool = True  # Enable batch generation for faster evaluation
-    
+
     # Batch size settings
     max_batch_size: Optional[int] = None  # Maximum batch size (auto-detect if None)
     adaptive_batching: bool = True  # Automatically adjust batch size based on memory
@@ -458,14 +458,14 @@ class MBPPEvaluator:
         """Get adaptive batch size based on GPU memory and problem count."""
         if not torch.cuda.is_available():
             return 1
-        
+
         # Get GPU memory info
         gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
-        
+
         # If user specified max_batch_size, respect it
         if self.config.max_batch_size is not None:
             return min(self.config.max_batch_size, total_problems)
-        
+
         # Adaptive batch sizing based on GPU memory
         if gpu_memory >= 30:  # V100 or larger
             # Conservative batch sizes for V100
@@ -486,40 +486,50 @@ class MBPPEvaluator:
         else:
             # Smaller GPUs
             return min(5, total_problems)
-    
-    def _batch_generate_with_hf_adaptive(self, prompts: List[str], model, tokenizer) -> List[str]:
+
+    def _batch_generate_with_hf_adaptive(
+        self, prompts: List[str], model, tokenizer
+    ) -> List[str]:
         """Batch generate text using HuggingFace model with adaptive batching."""
         if not prompts:
             return []
-            
+
         if len(prompts) == 1:
             return [self._generate_with_hf(prompts[0], model, tokenizer)]
-        
+
         # Determine optimal batch size
         optimal_batch_size = self._get_adaptive_batch_size(len(prompts))
-        logger.info(f"🎯 Adaptive batching: processing {len(prompts)} problems in batches of {optimal_batch_size}")
-        
+        logger.info(
+            f"🎯 Adaptive batching: processing {len(prompts)} problems in batches of {optimal_batch_size}"
+        )
+
         all_generated_texts = []
         total_batches = (len(prompts) + optimal_batch_size - 1) // optimal_batch_size
-        
+
         for batch_idx in range(total_batches):
             start_idx = batch_idx * optimal_batch_size
             end_idx = min(start_idx + optimal_batch_size, len(prompts))
             batch_prompts = prompts[start_idx:end_idx]
-            
-            logger.info(f"🎯 Processing batch {batch_idx + 1}/{total_batches} ({len(batch_prompts)} problems)")
-            
+
+            logger.info(
+                f"🎯 Processing batch {batch_idx + 1}/{total_batches} ({len(batch_prompts)} problems)"
+            )
+
             try:
                 # Process this batch
-                batch_texts = self._batch_generate_with_hf(batch_prompts, model, tokenizer)
+                batch_texts = self._batch_generate_with_hf(
+                    batch_prompts, model, tokenizer
+                )
                 all_generated_texts.extend(batch_texts)
-                
+
                 logger.info(f"✅ Batch {batch_idx + 1} completed successfully")
-                
+
             except Exception as e:
                 logger.error(f"❌ Batch {batch_idx + 1} failed: {e}")
-                logger.info("🔄 Falling back to individual generation for this batch...")
-                
+                logger.info(
+                    "🔄 Falling back to individual generation for this batch..."
+                )
+
                 # Fall back to individual generation for this batch
                 for prompt in batch_prompts:
                     try:
@@ -528,10 +538,12 @@ class MBPPEvaluator:
                     except Exception as e2:
                         logger.error(f"❌ Individual generation failed: {e2}")
                         all_generated_texts.append("")
-        
-        logger.info(f"🏁 Adaptive batching complete: {len(all_generated_texts)} total completions")
+
+        logger.info(
+            f"🏁 Adaptive batching complete: {len(all_generated_texts)} total completions"
+        )
         return all_generated_texts
-    
+
     def _batch_generate_with_vllm_adaptive(self, prompts: List[str]) -> List[str]:
         """Batch generate text using vLLM server with adaptive batching."""
         vllm_integration = get_vllm_integration()
@@ -540,37 +552,47 @@ class MBPPEvaluator:
 
         if not prompts:
             return []
-            
+
         if len(prompts) == 1:
             return [self._generate_with_vllm(prompts[0])]
-        
+
         # Determine optimal batch size for vLLM
         optimal_batch_size = self._get_adaptive_batch_size(len(prompts))
-        logger.info(f"🎯 vLLM adaptive batching: processing {len(prompts)} problems in batches of {optimal_batch_size}")
-        
+        logger.info(
+            f"🎯 vLLM adaptive batching: processing {len(prompts)} problems in batches of {optimal_batch_size}"
+        )
+
         all_generated_texts = []
         total_batches = (len(prompts) + optimal_batch_size - 1) // optimal_batch_size
-        
+
         for batch_idx in range(total_batches):
             start_idx = batch_idx * optimal_batch_size
             end_idx = min(start_idx + optimal_batch_size, len(prompts))
             batch_prompts = prompts[start_idx:end_idx]
-            
-            logger.info(f"🚀 vLLM processing batch {batch_idx + 1}/{total_batches} ({len(batch_prompts)} problems)")
-            
+
+            logger.info(
+                f"🚀 vLLM processing batch {batch_idx + 1}/{total_batches} ({len(batch_prompts)} problems)"
+            )
+
             try:
                 # vLLM handles batching efficiently
                 batch_completions = vllm_integration.generate_completions(
                     batch_prompts, mode="mbpp_evaluation"
                 )
-                all_generated_texts.extend(batch_completions if batch_completions else [""] * len(batch_prompts))
-                
+                all_generated_texts.extend(
+                    batch_completions
+                    if batch_completions
+                    else [""] * len(batch_prompts)
+                )
+
                 logger.info(f"✅ vLLM batch {batch_idx + 1} completed successfully")
-                
+
             except Exception as e:
                 logger.error(f"❌ vLLM batch {batch_idx + 1} failed: {e}")
-                logger.info("🔄 Falling back to individual generation for this batch...")
-                
+                logger.info(
+                    "🔄 Falling back to individual generation for this batch..."
+                )
+
                 # Fall back to individual generation for this batch
                 for prompt in batch_prompts:
                     try:
@@ -579,8 +601,10 @@ class MBPPEvaluator:
                     except Exception as e2:
                         logger.error(f"❌ Individual vLLM generation failed: {e2}")
                         all_generated_texts.append("")
-        
-        logger.info(f"🏁 vLLM adaptive batching complete: {len(all_generated_texts)} total completions")
+
+        logger.info(
+            f"🏁 vLLM adaptive batching complete: {len(all_generated_texts)} total completions"
+        )
         return all_generated_texts
 
     def evaluate_model(
@@ -634,26 +658,34 @@ class MBPPEvaluator:
         # Batch generate all completions (if enabled)
         generated_texts = []
         use_batch = self.config.batch_generation and len(problems) > 1
-        
+
         if use_batch:
             batch_start = time.time()
             try:
                 if use_vllm:
                     if self.config.adaptive_batching:
-                        generated_texts = self._batch_generate_with_vllm_adaptive(prompts)
+                        generated_texts = self._batch_generate_with_vllm_adaptive(
+                            prompts
+                        )
                     else:
                         generated_texts = self._batch_generate_with_vllm(prompts)
                 else:
                     if self.config.adaptive_batching:
-                        generated_texts = self._batch_generate_with_hf_adaptive(prompts, model, tokenizer)
+                        generated_texts = self._batch_generate_with_hf_adaptive(
+                            prompts, model, tokenizer
+                        )
                     else:
-                        generated_texts = self._batch_generate_with_hf(prompts, model, tokenizer)
-                
+                        generated_texts = self._batch_generate_with_hf(
+                            prompts, model, tokenizer
+                        )
+
                 batch_time = time.time() - batch_start
                 avg_per_problem = batch_time / len(problems)
-                logger.info(f"🚀 BATCH GENERATION SUCCESS: {len(generated_texts)} completions in {batch_time:.3f}s ({avg_per_problem:.3f}s per problem)")
+                logger.info(
+                    f"🚀 BATCH GENERATION SUCCESS: {len(generated_texts)} completions in {batch_time:.3f}s ({avg_per_problem:.3f}s per problem)"
+                )
                 use_batch = True  # Success, don't fall back
-                    
+
             except Exception as e:
                 batch_time = time.time() - batch_start
                 logger.error(f"❌ BATCH GENERATION FAILED after {batch_time:.3f}s: {e}")
