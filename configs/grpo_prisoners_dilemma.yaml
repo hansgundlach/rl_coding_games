@@ -98,7 +98,7 @@ evaluation:
   enabled_initial: true       # Run evaluation before training
   enabled_final: true         # Run evaluation after training  
   enabled_interval: true      # Run evaluation during training
-  eval_interval_steps: 10     # Run evaluation every N steps
+  eval_interval_steps: 20     # Run evaluation every N steps
   consistent_questions: true  # Use same questions for all interval evaluations (default: true)
   
   # MBPP evaluation settings (for general coding ability)
