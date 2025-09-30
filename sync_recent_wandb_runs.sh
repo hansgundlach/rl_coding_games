@@ -43,6 +43,7 @@ fi
 echo "📋 Found the following recent offline runs:"
 echo "$recent_runs" | sed 's|^\./||' | nl -w2 -s'. '
 echo
+#stuff
 
 # Show project mapping info
 echo "📊 Project Mapping Information:"
