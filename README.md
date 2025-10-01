@@ -1,7 +1,8 @@
 # Project on RL Training of Language Models with Adversarial Games
 
-Models generate strategies to play the iterated prisoners dilemma game. More explicitly LLMs generate code that competes in the iterated prisoners dilemma game. In addition, we add a variety of tehcniques to increase the complexity of the iterated prisoners dilemma game. 
-Here is a sample setting file. We add a Win-Stay, Lose-Shift Bot (WSLS) bot with a 20% frequency to stabilize and make environment more stationary. Here is a config sample.
+
+What happens when models strategize about the iterated prisoners dilemma?
+Here we design a scenario where models generate python code strategies to play the iterated prisoners dilemma game. We add a variety of techniques to increase the complexity of the iterated prisoners dilemma game. Here is a sample setting file. We add a Win-Stay, Lose-Shift Bot (WSLS) bot with a 20% frequency to stabilize and make environment more stationary. Here is a config sample. We run GRPO as our main training algorithmn. 
 
 ```
 # Game-specific settings
@@ -24,7 +25,7 @@ game:
   wsls_bot_prob: 0.2           # 20% chance of facing WSLS bot instead of frozen copy
 ```
 
-Installation: 
+## Installation: 
 Setup venv on machine using requirements.txt
 run training by typing:
 

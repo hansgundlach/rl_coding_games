@@ -140,3 +140,4 @@ model_cache/
 extended_code_games/
 game_project_rl/
 outputs/grpo_prisoners_dilemma/
+outputs/grpo_code_game_icl/
