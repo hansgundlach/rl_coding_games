@@ -235,6 +235,7 @@ print("📦 Loading utility modules...")
 from utils.env_loader import get_api_key
 from utils.seed_manager import SeedManager
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
+from evaluation.alignment.evaluator import AlignmentEvaluator, AlignmentEvalConfig
 from game_environments.prisoners_dilemma import IteratedPrisonersDilemma
 from game_environments.base_game import PlayerSubmission
 
@@ -282,7 +283,9 @@ eval_config = EvalConfig(**eval_config_dict)
 
 mbpp_evaluator = MBPPEvaluator(eval_config)
 
-if not mbpp_evaluator.config.enabled:
+if not config["evaluation"].get("enabled", True):
+    print("⚠️ MBPP coding evaluation disabled by configuration")
+elif not mbpp_evaluator.config.enabled:
     print("⚠️ MBPP evaluation disabled - dataset not found")
     print("💡 To enable evaluation, download MBPP dataset first:")
     print("   python -m evaluation.mbpp.evaluator")
@@ -290,6 +293,28 @@ else:
     print(
         f"✅ MBPP evaluation enabled with {mbpp_evaluator.config.num_questions} questions"
     )
+
+# Initialize alignment evaluator
+print("🧪 Setting up alignment evaluator...")
+alignment_eval_config_dict = config.get("alignment_evaluation", {})
+alignment_eval_config = AlignmentEvalConfig(
+    enabled=alignment_eval_config_dict.get("enabled", True),
+    eval_at_start=alignment_eval_config_dict.get("enabled_initial", True),
+    eval_at_end=alignment_eval_config_dict.get("enabled_final", True),
+    eval_interval_steps=alignment_eval_config_dict.get("eval_interval_steps", None),
+    temperature=alignment_eval_config_dict.get("temperature", 0.7),
+    do_sample=alignment_eval_config_dict.get("do_sample", True),
+    max_new_tokens=alignment_eval_config_dict.get("max_new_tokens", 512),
+    results_dir=alignment_eval_config_dict.get("results_dir", "./eval_results/alignment"),
+    verbose=alignment_eval_config_dict.get("verbose", True)
+)
+
+alignment_evaluator = AlignmentEvaluator(alignment_eval_config)
+
+if alignment_evaluator.config.enabled:
+    print("✅ Alignment evaluation enabled")
+else:
+    print("⚠️ Alignment evaluation disabled")
 
 
 @dataclass
@@ -751,6 +776,20 @@ if config["evaluation"].get("enabled_initial", True) and mbpp_evaluator.config.e
             }
         )
 
+# Run initial alignment evaluation if enabled
+if alignment_evaluator.config.enabled and alignment_evaluator.config.eval_at_start:
+    print("🧪 Running initial alignment evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("initial_alignment")
+    initial_alignment_results = alignment_evaluator.evaluate_model(
+        model, tokenizer, step=0, phase="initial"
+    )
+
+    if WANDB_ENABLED and wandb.run:
+        alignment_log_dict = alignment_evaluator.get_wandb_log_dict(initial_alignment_results)
+        alignment_log_dict["step"] = 0
+        wandb.log(alignment_log_dict)
+
 # Training loop
 for step in range(num_steps):
     print(f"\n🎯 Step {step + 1}/{num_steps}")
@@ -1110,6 +1149,24 @@ for step in range(num_steps):
                 }
             )
 
+    # Run interval alignment evaluation if enabled
+    if (
+        alignment_evaluator.config.enabled
+        and config.get("alignment_evaluation", {}).get("enabled_interval", False)
+        and (step + 1) % config.get("alignment_evaluation", {}).get("eval_interval_steps", 10) == 0
+    ):
+        print(f"🧪 Running interval alignment evaluation at step {step + 1}...")
+        # Seed for consistent evaluation
+        seed_manager.seed_for_evaluation_auto(f"interval_alignment_step_{step + 1}")
+        alignment_results = alignment_evaluator.evaluate_model(
+            model, tokenizer, step=step + 1, phase="interval"
+        )
+
+        if WANDB_ENABLED and wandb.run:
+            alignment_log_dict = alignment_evaluator.get_wandb_log_dict(alignment_results)
+            alignment_log_dict["step"] = step + 1
+            wandb.log(alignment_log_dict)
+
     # Save checkpoint periodically
     if (step + 1) % config["training"]["save_interval"] == 0:
         checkpoint_dir = f"{config['training']['checkpoint_dir']}/step_{step + 1}"
@@ -1144,6 +1201,20 @@ if config["evaluation"].get("enabled_final", True) and mbpp_evaluator.config.ena
                 "step": num_steps,
             }
         )
+
+# Run final alignment evaluation if enabled
+if alignment_evaluator.config.enabled and alignment_evaluator.config.eval_at_end:
+    print("🧪 Running final alignment evaluation...")
+    # Seed for consistent evaluation
+    seed_manager.seed_for_evaluation_auto("final_alignment")
+    final_alignment_results = alignment_evaluator.evaluate_model(
+        model, tokenizer, step=num_steps, phase="final"
+    )
+
+    if WANDB_ENABLED and wandb.run:
+        final_alignment_log_dict = alignment_evaluator.get_wandb_log_dict(final_alignment_results)
+        final_alignment_log_dict["step"] = num_steps
+        wandb.log(final_alignment_log_dict)
 
 # Final checkpoint
 final_checkpoint_dir = f"{config['training']['checkpoint_dir']}/final"

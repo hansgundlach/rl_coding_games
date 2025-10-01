@@ -60,7 +60,8 @@ training:
 
 # Evaluation configuration
 evaluation:
-  enabled: true
+  # MBPP coding evaluation settings
+  enabled: true               # Enable/disable coding evaluations entirely
   enabled_initial: true       # Run evaluation before training
   enabled_final: true         # Run evaluation after training  a
   enabled_interval: true      # Run evaluation during training
@@ -75,6 +76,21 @@ evaluation:
   do_sample: false            # Required when temperature=0.0 for greedy decoding
   max_new_tokens: 512
   timeout_seconds: 10
+
+# Alignment evaluation configuration
+alignment_evaluation:
+  enabled: true                # Enable alignment evaluations
+  enabled_initial: true        # Run alignment eval before training
+  enabled_final: true          # Run alignment eval after training
+  enabled_interval: true       # Run alignment eval during training
+  eval_interval_steps: 10      # Run alignment eval every N steps (same as MBPP)
+  
+  # Alignment evaluation settings
+  temperature: 0.7             # Higher temperature for more varied responses
+  do_sample: true              # Enable sampling for alignment responses
+  max_new_tokens: 512          # Maximum tokens per alignment response
+  results_dir: "./eval_results/spiral_prisoners_dilemma_alignment"
+  verbose: true                # Print alignment responses for manual review
 
 # Debug Configuration
 debug:

@@ -42,23 +42,37 @@ echo ""
 
 # Environment setup
 echo "🔧 Setting up environment..."
-cd $SLURM_SUBMIT_DIR
+cd $SLURM_SUBMIT_DIR || cd /home/gridsan/hgundlach/game_project_rl
+echo "📂 Working directory: $(pwd)"
+echo "📂 Contents: $(ls -la | head -5)"
 
-# Load necessary modules (adjust for Supercloud)
-module purge
-module load cuda/12.1
-module load python/3.9
+# Try to load modules if they exist (optional for Supercloud)
+module purge 2>/dev/null || echo "⚠️ module command not available"
+module load cuda/12.1 2>/dev/null || echo "⚠️ cuda/12.1 module not found, using system CUDA"
+module load python/3.9 2>/dev/null || echo "⚠️ python/3.9 module not found, using system Python"
 
-# Activate virtual environment
-echo "🐍 Activating virtual environment..."
-source venv/bin/activate || {
-    echo "❌ Failed to activate virtual environment"
-    echo "Please ensure you have created a virtual environment:"
-    echo "  python -m venv venv"
-    echo "  source venv/bin/activate"
-    echo "  pip install -r requirements.txt"
-    exit 1
-}
+# Check if virtual environment is already active
+if [[ "$VIRTUAL_ENV" != "" ]]; then
+    echo "🐍 Virtual environment already active: $VIRTUAL_ENV"
+else
+    echo "🐍 Attempting to activate virtual environment..."
+    # Try common venv locations
+    if [ -f "venv/bin/activate" ]; then
+        source venv/bin/activate
+        echo "✅ Activated venv/bin/activate"
+    elif [ -f "../venv/bin/activate" ]; then
+        source ../venv/bin/activate
+        echo "✅ Activated ../venv/bin/activate"
+    elif [ -f "$HOME/venv/bin/activate" ]; then
+        source $HOME/venv/bin/activate
+        echo "✅ Activated $HOME/venv/bin/activate"
+    else
+        echo "⚠️ No virtual environment found, using system Python"
+        echo "   Checked: venv/bin/activate, ../venv/bin/activate, $HOME/venv/bin/activate"
+        echo "   Current Python: $(which python)"
+        echo "   If this fails, activate your venv before running sbatch"
+    fi
+fi
 
 # Set offline environment variables for Supercloud
 echo "🌐 Setting offline mode for Supercloud..."
@@ -88,7 +102,11 @@ export GRPO_LOG_DIR="$JOB_LOG_DIR"
 
 # GPU information
 echo "🎮 GPU Information:"
-nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits
+if command -v nvidia-smi &> /dev/null; then
+    nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits
+else
+    echo "⚠️ nvidia-smi not found, checking CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+fi
 echo ""
 
 # Memory monitoring before training
@@ -96,8 +114,12 @@ echo "💾 Pre-training Memory Status:"
 echo "System Memory:"
 free -h
 echo ""
-echo "GPU Memory:"
-nvidia-smi --query-gpu=memory.used,memory.total,memory.free --format=csv,noheader,nounits
+if command -v nvidia-smi &> /dev/null; then
+    echo "GPU Memory:"
+    nvidia-smi --query-gpu=memory.used,memory.total,memory.free --format=csv,noheader,nounits
+else
+    echo "GPU Memory: nvidia-smi not available"
+fi
 echo ""
 
 # Check if we have enough memory for large evaluations
@@ -135,8 +157,12 @@ echo "Exit code: $TRAINING_EXIT_CODE"
 
 # Post-training information
 echo ""
-echo "📊 Post-training GPU memory:"
-nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits
+if command -v nvidia-smi &> /dev/null; then
+    echo "📊 Post-training GPU memory:"
+    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits
+else
+    echo "📊 Post-training GPU memory: nvidia-smi not available"
+fi
 
 # Copy important files to job log directory
 echo ""

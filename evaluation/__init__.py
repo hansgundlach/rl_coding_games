@@ -25,6 +25,9 @@ from .game_evaluator import GameEvaluator
 from evaluation.mbpp.evaluator import MBPPEvaluator, EvalConfig
 from evaluation.configs.loader import create_eval_config_for_training, load_eval_config, print_config_summary
 
+# Alignment evaluation system
+from evaluation.alignment.evaluator import AlignmentEvaluator, AlignmentEvalConfig, create_alignment_eval_config_for_training
+
 __all__ = [
     # Legacy
     "EvalPlusRunner", 
@@ -34,7 +37,11 @@ __all__ = [
     'EvalConfig', 
     'create_eval_config_for_training',
     'load_eval_config',
-    'print_config_summary'
+    'print_config_summary',
+    # Alignment evaluation system
+    'AlignmentEvaluator',
+    'AlignmentEvalConfig',
+    'create_alignment_eval_config_for_training'
 ]
 
 __version__ = "1.0.0"
