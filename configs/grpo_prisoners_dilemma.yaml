@@ -3,14 +3,14 @@
 
 # Model configuration
 model:
-  id: "Qwen/Qwen3-1.7B"
+  id: "Qwen/Qwen3-4B"
   cache_dir: "./model_cache"
   
   # Quantization settings (optional - for memory efficiency)
   quantization:
-    enabled: false              # Enable quantization with bitsandbytes
+    enabled: true              # Enable quantization with bitsandbytes
     load_in_4bit: false         # Use 4-bit quantization (QLoRA style)
-    load_in_8bit: false         # Use 8-bit quantization
+    load_in_8bit: true         # Use 8-bit quantization
     bnb_4bit_compute_dtype: "float16"  # Compute dtype for 4-bit quantization
     bnb_4bit_use_double_quant: true    # Use double quantization for 4-bit
     bnb_4bit_quant_type: "nf4"         # Quantization type: "nf4" or "fp4"
@@ -28,17 +28,17 @@ lora:
 # Game-specific settings
 game:
   timeout: 3  # Code execution timeout in seconds per strategy call
-  num_rounds: 20  # Number of rounds in each prisoner's dilemma game
+  num_rounds: 4  # Number of rounds in each prisoner's dilemma game
   payoff_matrix:
     # Payoff matrix: (my_action, opponent_action): (my_payoff, opponent_payoff)
-    cooperate_cooperate: [3, 3]
+    cooperate_cooperate: [2, 2]
     cooperate_defect: [0, 5]
     defect_cooperate: [5, 0]
     defect_defect: [1, 1]
   
   # Noise settings - small chance to flip actions
   noise_enabled: true           # Enable action noise
-  noise_prob: 0.05             # 5% probability of flipping each action (0.03-0.08 recommended)
+  noise_prob: 0.2            # 5% probability of flipping each action (0.03-0.08 recommended)
   
   # WSLS (Win-Stay/Lose-Shift) bot settings
   wsls_bot_enabled: true       # Enable WSLS bot as occasional opponent
@@ -54,8 +54,8 @@ generation:
 
 # GRPO Training Configuration
 grpo_config:
-  learning_rate: 0.00002
-  beta: 0.05                        # KL penalty coefficient
+  learning_rate: 1e-4
+  beta: 1e-4                        # KL penalty coefficient
   per_device_train_batch_size: 4    # Reduced for memory efficiency
   gradient_accumulation_steps: 2
   max_prompt_length: 512
@@ -117,7 +117,7 @@ alignment_evaluation:
   enabled_initial: true        # Run alignment eval before training
   enabled_final: true          # Run alignment eval after training
   enabled_interval: true       # Run alignment eval during training
-  eval_interval_steps: 40      # Run alignment eval every N steps (same as MBPP)
+  eval_interval_steps: 20      # Run alignment eval every N steps (same as MBPP)
   
   # Alignment evaluation settings
   temperature: 0.7             # Higher temperature for more varied responses
@@ -128,8 +128,8 @@ alignment_evaluation:
 
 # Debug Configuration
 debug:
-  show_detailed_games: 2            # Number of games per step to show detailed results
-  max_code_chars: 500               # Maximum characters of code to display
+  show_detailed_games: 1            # Number of games per step to show detailed results
+  max_code_chars: 100               # Maximum characters of code to display
   show_full_responses: false        # Show full model responses (can be very long)
   show_execution_details: true      # Show code execution results and errors
 
